@@ -1,0 +1,15 @@
+#
+# This script gets sourced on boot
+# It should exist as /boot/config-saio.txt
+#
+
+# Mode to boot in, TESTER will run a debug app
+MODE=NORMAL
+#MODE=TESTER
+#MODE=SHELL
+
+# Location of tester script (gets called with <python $TESTER>)
+TESTER=/home/pi/Super-AIO/release/tester/tester.py
+
+# Location of the OSD script (unused currently)
+OSD=/home/pi/Super-AIO/release/saio/saio-osd.py
