@@ -27,3 +27,65 @@ Save `setup.sh` to your Raspberry Pi in the **home directory** (`/home/pi/`).
 Run the following command:  
 ```bash
 chmod +x setup.sh
+```
+
+Step 3: Run the Installation
+Run the script:
+```bash
+bash setup.sh
+```
+
+🚀 The system will reboot automatically after setup.
+
+File Locations 📁
+Component	Location
+Super-AIO Repository	/home/pi/Super-AIO/
+Configuration Files	/boot/
+Emulator Config (PiFBA)	/opt/retropie/configs/fba/
+Emulator Config (MAME4All)	/opt/retropie/configs/mame-mame4all/
+Wi-Fi Setup File	/boot/wpa_supplicant.conf
+RetroPie Startup Script	/opt/retropie/configs/all/autostart.sh
+RetroPie Runcommand Hooks	/opt/retropie/configs/all/runcommand-onstart.sh & /opt/retropie/configs/all/runcommand-onend.sh
+Systemd Service for Auto-Startup 🖥️
+Super-AIO runs at boot using systemd.
+
+Manually Start or Stop the Service
+Run the following commands:
+
+bash
+sudo systemctl start saio.service
+sudo systemctl stop saio.service
+Check the Service Status
+Run:
+
+bash
+sudo systemctl status saio.service
+Enable Auto-Start on Boot
+Run:
+
+bash
+sudo systemctl enable saio.service
+Backup System 🗂️
+Before modifying any file, the script creates timestamped backups (e.g., config.txt_2025-05-20_22-15-30.backup).
+
+How to Restore a Backup
+Simply copy the desired backup file over the existing configuration:
+
+bash
+sudo cp /boot/config.txt_YYYY-MM-DD_HH-MM-SS.backup /boot/config.txt
+Links & Community 🔗
+Super-AIO Project by Kite → GitHub
+
+RetroPie Official Website → RetroPie.org.uk
+
+Raspberry Pi Foundation → RaspberryPi.org
+
+A Love Letter to RetroPie ❤️
+To the developers, the modders, and the dreamers behind RetroPie—thank you. You took a tiny piece of silicon, gave it a heartbeat, and built the greatest DIY retro gaming platform of all time.
+
+From the early days of RetroPie 1.0, to today’s multi-platform, shader-packed, joystick-tuned perfection, your dedication has kept the spirit of classic gaming alive. We hope this script helps more people experience the magic of RetroPie—whether they’re booting up their first Pi or tweaking their hundredth config file at 2AM.
+
+Here's to arcade legends, homebrew pioneers, and every Game Boy-loving hacker who ever pressed SELECT + START to quit.
+
+🎮 Long live RetroPie.
+chmod +x setup.sh
