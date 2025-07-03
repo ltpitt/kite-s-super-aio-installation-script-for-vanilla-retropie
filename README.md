@@ -73,6 +73,7 @@ Simply copy the desired backup file over the existing configuration:
 
 bash
 sudo cp /boot/config.txt_YYYY-MM-DD_HH-MM-SS.backup /boot/config.txt
+
 Links & Community 🔗
 Super-AIO Project by Kite → GitHub
 
@@ -88,4 +89,3 @@ From the early days of RetroPie 1.0, to today’s multi-platform, shader-packed,
 Here's to arcade legends, homebrew pioneers, and every Game Boy-loving hacker who ever pressed SELECT + START to quit.
 
 🎮 Long live RetroPie.
-chmod +x setup.sh
