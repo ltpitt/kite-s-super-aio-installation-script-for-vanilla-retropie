@@ -14,6 +14,7 @@
 # - **Backs up every modified file with a timestamp**.
 # - **Enables SSH automatically** on first reboot.
 # - **Copies Wi-Fi configuration** (`wpa_supplicant.conf`) if present.
+# - **Supports restoring previous backups by timestamp**.
 #
 # ============================================================
 
@@ -30,13 +31,49 @@ BOOT_PATH="/boot"
 
 # Important files
 AUTOSTART_FILE="$CONFIG_PATH/autostart.sh"
-SYSTEMD_SERVICE="/etc/systemd/system/saio.service"
-XBOXDRV_SERVICE="/etc/systemd/system/xboxdrv.service"
 RUNCOMMAND_START="$CONFIG_PATH/runcommand-onstart.sh"
 RUNCOMMAND_END="$CONFIG_PATH/runcommand-onend.sh"
+SYSTEMD_SERVICE="/etc/systemd/system/saio.service"
+XBOXDRV_SERVICE="/etc/systemd/system/xboxdrv.service"
 
+# ==== RESTORE MODE ====
+if [[ "$1" == "restore" ]]; then
+    RESTORE_TIMESTAMP="$2"
+    if [ -z "$RESTORE_TIMESTAMP" ]; then
+        echo "Available backup timestamps:"
+        find /etc /boot /opt/retropie/configs -type f -name "*.backup" 2>/dev/null | sed 's/.*_//;s/.backup//' | sort -u
+        echo "Usage: $0 restore <timestamp>"
+        exit 0
+    fi
 
-# Backup function with timestamped filenames
+    echo "Restoring backups with timestamp: $RESTORE_TIMESTAMP"
+
+    restore_file() {
+        local original="$1"
+        local backup="${original}_${RESTORE_TIMESTAMP}.backup"
+        if [ -f "$backup" ]; then
+            echo "Restoring $original from $backup"
+            sudo cp "$backup" "$original"
+        else
+            echo "No backup found for $original with timestamp $RESTORE_TIMESTAMP"
+        fi
+    }
+
+    restore_file "/etc/asound.conf"
+    restore_file "$BOOT_PATH/config.txt"
+    restore_file "$BOOT_PATH/config-saio.txt"
+    restore_file "$AUTOSTART_FILE"
+    restore_file "$FBA_PATH/fba2x.cfg"
+    restore_file "$MAME_PATH/mame.cfg"
+    restore_file "$RUNCOMMAND_START"
+    restore_file "$RUNCOMMAND_END"
+    restore_file "$BOOT_PATH/wpa_supplicant.conf"
+
+    echo "Restore complete. A reboot is recommended."
+    exit 0
+fi
+
+# ==== BACKUP FUNCTION ====
 backup_file() {
     local file_path="$1"
     if [ -f "$file_path" ]; then
@@ -210,4 +247,3 @@ sudo systemctl status xboxdrv
 
 echo "Rebooting system..."
 sudo reboot
-
