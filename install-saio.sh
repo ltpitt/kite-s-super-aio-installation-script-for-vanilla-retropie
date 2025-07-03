@@ -32,6 +32,9 @@ BOOT_PATH="/boot"
 AUTOSTART_FILE="$CONFIG_PATH/autostart.sh"
 SYSTEMD_SERVICE="/etc/systemd/system/saio.service"
 XBOXDRV_SERVICE="/etc/systemd/system/xboxdrv.service"
+RUNCOMMAND_START="$CONFIG_PATH/runcommand-onstart.sh"
+RUNCOMMAND_END="$CONFIG_PATH/runcommand-onend.sh"
+
 
 # Backup function with timestamped filenames
 backup_file() {
@@ -127,6 +130,14 @@ if [ -f "$SETUP_PATH/wpa_supplicant.conf" ]; then
     backup_file "$BOOT_PATH/wpa_supplicant.conf"
     sudo cp -u "$SETUP_PATH/wpa_supplicant.conf" "$BOOT_PATH/"
 fi
+
+echo "Backing up existing runcommand scripts..."
+backup_file "$RUNCOMMAND_START"
+backup_file "$RUNCOMMAND_END"
+
+echo "Copying new runcommand scripts..."
+sudo cp -u "$SETUP_PATH/runcommand-onstart.sh" "$RUNCOMMAND_START"
+sudo cp -u "$SETUP_PATH/runcommand-onend.sh" "$RUNCOMMAND_END"
 
 echo "Creating systemd service for Super-AIO..."
 if [ ! -f "$SYSTEMD_SERVICE" ]; then
