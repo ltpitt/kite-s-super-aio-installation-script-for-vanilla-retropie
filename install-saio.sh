@@ -5,6 +5,7 @@
 #
 # This script automates the installation and setup of the
 # Super-AIO project on a Raspberry Pi running RetroPie.
+# Be sure to run it BEFORE configuring any gamepad.
 #
 # Features:
 # - Installs dependencies **only if missing**.
@@ -29,9 +30,8 @@ BOOT_PATH="/boot"
 
 # Important files
 AUTOSTART_FILE="$CONFIG_PATH/autostart.sh"
-RUNCOMMAND_START="$CONFIG_PATH/runcommand-onstart.sh"
-RUNCOMMAND_END="$CONFIG_PATH/runcommand-onend.sh"
 SYSTEMD_SERVICE="/etc/systemd/system/saio.service"
+XBOXDRV_SERVICE="/etc/systemd/system/xboxdrv.service"
 
 # Backup function with timestamped filenames
 backup_file() {
@@ -100,7 +100,15 @@ sudo cp -u autostart.sh "$AUTOSTART_FILE"
 
 echo "Setting up sound configuration..."
 if [ ! -f "/home/pi/.asoundrc" ]; then
-    echo -e "pcm.!default {\n\ttype hw\n\tcard 1\n}\n\nctl.!default {\n\ttype hw\n\tcard 1\n}" | sudo tee /home/pi/.asoundrc
+    echo -e "pcm.!default {
+	type hw
+	card 1
+}
+
+ctl.!default {
+	type hw
+	card 1
+}" | sudo tee /home/pi/.asoundrc
 fi
 
 echo "Backing up and copying emulator configuration files..."
@@ -119,14 +127,6 @@ if [ -f "$SETUP_PATH/wpa_supplicant.conf" ]; then
     backup_file "$BOOT_PATH/wpa_supplicant.conf"
     sudo cp -u "$SETUP_PATH/wpa_supplicant.conf" "$BOOT_PATH/"
 fi
-
-echo "Backing up existing runcommand scripts..."
-backup_file "$RUNCOMMAND_START"
-backup_file "$RUNCOMMAND_END"
-
-echo "Copying new runcommand scripts..."
-sudo cp -u "$SETUP_PATH/runcommand-onstart.sh" "$RUNCOMMAND_START"
-sudo cp -u "$SETUP_PATH/runcommand-onend.sh" "$RUNCOMMAND_END"
 
 echo "Creating systemd service for Super-AIO..."
 if [ ! -f "$SYSTEMD_SERVICE" ]; then
@@ -152,13 +152,50 @@ else
     echo "Service file already exists, skipping creation."
 fi
 
-echo "Reloading systemd and enabling the service..."
+echo "Creating systemd service for xboxdrv..."
+if [ ! -f "$XBOXDRV_SERVICE" ]; then
+    sudo tee "$XBOXDRV_SERVICE" > /dev/null <<EOF
+[Unit]
+Description=Start xboxdrv at boot
+After=network.target
+
+[Service]
+ExecStart=/opt/retropie/supplementary/xboxdrv/bin/xboxdrv \
+    --evdev /dev/input/by-id/usb-Arduino_LLC_Arduino_Leonardo_HIDAF-if02-event-joystick \
+    --silent \
+    --detach-kernel-driver \
+    --force-feedback \
+    --deadzone-trigger 15% \
+    --deadzone 4000 \
+    --mimic-xpad \
+    --device-name "XBOX 360 Controller (xboxdrv)" \
+    --evdev-absmap ABS_HAT0X=dpad_x,ABS_HAT0Y=dpad_y \
+    --evdev-keymap BTN_THUMB2=x,BTN_THUMB=a,BTN_TRIGGER=b,BTN_PINKIE=back,BTN_BASE=lb,BTN_BASE3=rb,BTN_TOP=y,BTN_TOP2=start \
+    --dpad-only \
+    --ui-axismap lt=void,rt=void \
+    --ui-buttonmap tl=void,tr=void,guide=void
+Restart=always
+User=pi
+
+[Install]
+WantedBy=multi-user.target
+EOF
+else
+    echo "xboxdrv service already exists, skipping creation."
+fi
+
+echo "Reloading systemd and enabling services..."
 sudo systemctl daemon-reload
 sudo systemctl enable saio.service
 sudo systemctl start saio.service
+sudo systemctl enable xboxdrv
+sudo systemctl start xboxdrv
 
-echo "Checking service status..."
+echo "Checking Super-AIO service status..."
 sudo systemctl status saio.service
+
+echo "Checking xboxdrv service status..."
+sudo systemctl status xboxdrv
 
 echo "Rebooting system..."
 sudo reboot
