@@ -20,73 +20,27 @@ We built this project for **the love of hacking**, the thrill of **homebrew**, a
 
 ---
 
-## File Locations 📁
-
-| Component                    | Location                                      |
-|-----------------------------|-----------------------------------------------|
-| Super-AIO Repository        | `/home/pi/Super-AIO/`                         |
-| Configuration Files         | `configs/`                                    |
-| Emulator Config (PiFBA)     | `configs/fba2x.cfg`                           |
-| Emulator Config (MAME4All)  | `configs/mame.cfg`                            |
-| Wi-Fi Setup File            | `/boot/wpa_supplicant.conf`                   |
-| Example Wi-Fi Config        | `configs/wpa_supplicant.example.conf`         |
-| RetroPie Startup Script     | `/opt/retropie/configs/all/autostart.sh`      |
-| All Scripts                 | `scripts/`                                    |
-
----
-
 ## Installation Instructions 🛠️
 
-### Step 1: Download the Scripts
+### Step 1: Clone the Repository
 
-All scripts are now in the `scripts/` folder. For example, to run the installer:
+Clone this repository to your Raspberry Pi:
 
 ```bash
-bash install-saio.sh
+git clone https://github.com/ltpitt/kite-s-super-aio-installation-script-for-vanilla-retropie.git
+cd kite-s-super-aio-installation-script-for-vanilla-retropie
 ```
 
-### Step 2: Make It Executable
+### Step 2: Run the Installer
+
+Make the installer executable and run it:
 
 ```bash
 chmod +x install-saio.sh
+sudo ./install-saio.sh
 ```
 
-### Step 3: Run the Installation
-
-```bash
-bash install-saio.sh
-```
-
----
-
-## Systemd Service for Auto-Startup 🖥️
-
-Super-AIO runs at boot using systemd.
-
-### Manually Start or Stop the Service
-
-Run the following commands:
-
-```bash  
-  sudo systemctl start saio.service  
-  sudo systemctl stop saio.service
-```
-
-### Check the Service Status
-
-Run:
-
-```bash
-  sudo systemctl status saio.service
-```
-
-### Enable Auto-Start on Boot
-
-Run:
-
-```bash  
-  sudo systemctl enable saio.service
-```
+> The installer will set executable permissions for all scripts in the `scripts/` folder automatically.
 
 ---
 
@@ -96,11 +50,19 @@ Before modifying any file, the script creates timestamped backups (e.g., `config
 
 ### How to Restore a Backup
 
-Simply copy the desired backup file over the existing configuration:
+To list available backup timestamps:
 
-```bash  
-  sudo cp /boot/config.txt_YYYY-MM-DD_HH-MM-SS.backup /boot/config.txt
+```bash
+sudo ./install-saio.sh restore
 ```
+
+To restore all configuration files from a specific backup timestamp:
+
+```bash
+sudo ./install-saio.sh restore YYYY-MM-DD_HH-MM-SS
+```
+
+> The script will restore all files backed up at that timestamp. A reboot is recommended after restoring.
 
 ---
 

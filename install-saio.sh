@@ -21,9 +21,12 @@
 # ==== PATH CONSTANTS ====
 TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
 
+# Use the directory where this script resides as SETUP_PATH
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-${0}}")" && pwd)"
+SETUP_PATH="$SCRIPT_DIR"
+
 # System paths
 REPO_PATH="/home/pi/Super-AIO"
-SETUP_PATH="/home/pi/Super-AIO-Setup"
 CONFIG_PATH="/opt/retropie/configs/all"
 FBA_PATH="/opt/retropie/configs/fba"
 MAME_PATH="/opt/retropie/configs/mame-mame4all"
