@@ -20,42 +20,42 @@ We built this project for **the love of hacking**, the thrill of **homebrew**, a
 
 ---
 
-## Installation Instructions 🛠️
-
-### Step 1: Download the Script
-
-Save `setup.sh` to your Raspberry Pi in the **home directory** (`/home/pi/`).
-
-### Step 2: Make It Executable
-
-Run the following command:
-
-``` bash  
-  chmod +x setup.sh
-```
-
-### Step 3: Run the Installation
-
-Run the script:
-
-``` bash  
-  bash setup.sh
-```
-
-🚀 The system will reboot automatically after setup.
-
----
-
 ## File Locations 📁
 
 | Component                    | Location                                      |
 |-----------------------------|-----------------------------------------------|
 | Super-AIO Repository        | `/home/pi/Super-AIO/`                         |
-| Configuration Files         | `/boot/`                                      |
-| Emulator Config (PiFBA)     | `/opt/retropie/configs/fba/`                  |
-| Emulator Config (MAME4All)  | `/opt/retropie/configs/mame-mame4all/`        |
+| Configuration Files         | `configs/`                                    |
+| Emulator Config (PiFBA)     | `configs/fba2x.cfg`                           |
+| Emulator Config (MAME4All)  | `configs/mame.cfg`                            |
 | Wi-Fi Setup File            | `/boot/wpa_supplicant.conf`                   |
+| Example Wi-Fi Config        | `configs/wpa_supplicant.example.conf`         |
 | RetroPie Startup Script     | `/opt/retropie/configs/all/autostart.sh`      |
+| All Scripts                 | `scripts/`                                    |
+
+---
+
+## Installation Instructions 🛠️
+
+### Step 1: Download the Scripts
+
+All scripts are now in the `scripts/` folder. For example, to run the installer:
+
+```bash
+bash install-saio.sh
+```
+
+### Step 2: Make It Executable
+
+```bash
+chmod +x install-saio.sh
+```
+
+### Step 3: Run the Installation
+
+```bash
+bash install-saio.sh
+```
 
 ---
 
@@ -104,22 +104,46 @@ Simply copy the desired backup file over the existing configuration:
 
 ---
 
-## Links & Community 🔗
+## Utilities 🧰
 
-- **Super-AIO Project by Kite** → GitHub  
-- **RetroPie Official Website** → RetroPie.org.uk  
-- **Raspberry Pi Foundation** → RaspberryPi.org
+### ROM Sync Script
+
+`sync-roms-from-usb.sh` helps you quickly copy ROMs from a USB stick to your RetroPie system, preserving folder structure and only copying supported file types.
+
+#### Usage & Help
+
+```bash
+bash scripts/sync-roms-from-usb.sh --help
+```
+
+> Run the script with `--help` to see all available options and usage examples. The script supports overriding source, destination, and file extensions at runtime.
 
 ---
 
-## A Love Letter to RetroPie ❤️
+### Co-Co-Combo Breaker
 
-To the developers, the modders, and the dreamers behind RetroPie—thank you. You took a tiny piece of silicon, gave it a heartbeat, and built the greatest DIY retro gaming platform of all time.
+`co-co-combo-breaker.py` is a flexible utility for identifying button codes and monitoring for Select+Start combos to kill running emulators.
 
-From the early days of RetroPie 1.0, to today’s multi-platform, shader-packed, joystick-tuned perfection, your dedication has kept the spirit of classic gaming alive.
+#### Usage & Help
 
-We hope this script helps more people experience the magic of RetroPie—whether they’re booting up their first Pi or tweaking their hundredth config file at 2AM.
+```bash
+python3 scripts/co-co-combo-breaker.py --help
+```
 
-Here's to arcade legends, homebrew pioneers, and every Game Boy-loving hacker who ever pressed SELECT + START to quit. 🎮
+> Run the script with `--help` to see all available options and usage examples. Requires Python 3 and the `evdev` module (`sudo pip3 install evdev`).
 
-**Long live RetroPie.**
+---
+
+## Script Permissions
+
+The installer (`install-saio.sh`) sets executable permissions for all scripts in the `scripts/` folder. If you add new scripts, you may need to run:
+
+```bash
+chmod +x scripts/your-script.sh
+```
+
+---
+
+## .gitignore
+
+A sensible `.gitignore` is included to exclude Python cache, editor files, macOS files, backup/log files, and other common clutter.

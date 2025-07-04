@@ -90,11 +90,36 @@ PKGS=("libpng12-0")
 for pkg in "${PKGS[@]}"; do
     if ! dpkg -l | grep -q "$pkg"; then
         echo "Installing missing package: $pkg"
-        sudo apt-get install "$pkg" -y
+        if sudo apt-get install "$pkg" -y; then
+            echo "$pkg installed successfully."
+        else
+            echo "Failed to install $pkg. Please install it manually and re-run this script. Exiting."
+            exit 1
+        fi
     else
         echo "Package $pkg is already installed, skipping."
     fi
 done
+
+# Check and install xboxdrv via RetroPie-Setup if missing
+if ! command -v xboxdrv >/dev/null 2>&1; then
+    echo "xboxdrv not found. Attempting to install via RetroPie-Setup..."
+    if [ -d "/home/pi/RetroPie-Setup" ]; then
+        sudo /home/pi/RetroPie-Setup/retropie_packages.sh xboxdrv install
+    else
+        echo "RetroPie-Setup not found! Cloning RetroPie-Setup..."
+        git clone --depth=1 https://github.com/RetroPie/RetroPie-Setup.git /home/pi/RetroPie-Setup
+        sudo /home/pi/RetroPie-Setup/retropie_packages.sh xboxdrv install
+    fi
+    if command -v xboxdrv >/dev/null 2>&1; then
+        echo "xboxdrv installed successfully."
+    else
+        echo "Failed to install xboxdrv. Please install manually via RetroPie-Setup. Exiting."
+        exit 1
+    fi
+else
+    echo "xboxdrv is already installed, skipping."
+fi
 
 echo "Cloning Super-AIO repository..."
 if [ ! -d "$REPO_PATH" ]; then
@@ -124,15 +149,22 @@ for file in "${FILES[@]}"; do
     fi
 done
 
+# Set executable permissions for all scripts in scripts/
+for script in scripts/*.sh scripts/*.py; do
+    if [ -f "$script" ]; then
+        sudo chmod +x "$script"
+    fi
+done
+
 echo "Backing up configuration files before modification..."
 backup_file "/etc/asound.conf"
 backup_file "$BOOT_PATH/config.txt"
 backup_file "$BOOT_PATH/config-saio.txt"
 
 echo "Copying essential configuration files..."
-sudo cp -u asound.conf /etc/
-sudo cp -u config.txt "$BOOT_PATH/config.txt"
-sudo cp -u config-saio.txt "$BOOT_PATH/config-saio.txt"
+sudo cp -u configs/asound.conf /etc/
+sudo cp -u configs/config.txt "$BOOT_PATH/config.txt"
+sudo cp -u configs/config-saio.txt "$BOOT_PATH/config-saio.txt"
 
 echo "Backing up and updating RetroPie autostart script..."
 backup_file "$AUTOSTART_FILE"
@@ -140,22 +172,14 @@ sudo cp -u autostart.sh "$AUTOSTART_FILE"
 
 echo "Setting up sound configuration..."
 if [ ! -f "/home/pi/.asoundrc" ]; then
-    echo -e "pcm.!default {
-	type hw
-	card 1
-}
-
-ctl.!default {
-	type hw
-	card 1
-}" | sudo tee /home/pi/.asoundrc
+    echo -e "pcm.!default {\n\ttype hw\n\tcard 1\n}\n\nctl.!default {\n\ttype hw\n\tcard 1\n}" | sudo tee /home/pi/.asoundrc
 fi
 
 echo "Backing up and copying emulator configuration files..."
 backup_file "$FBA_PATH/fba2x.cfg"
 backup_file "$MAME_PATH/mame.cfg"
-sudo cp -u "$SETUP_PATH/fba2x.cfg" "$FBA_PATH/"
-sudo cp -u "$SETUP_PATH/mame.cfg" "$MAME_PATH/"
+sudo cp -u configs/fba2x.cfg "$FBA_PATH/"
+sudo cp -u configs/mame.cfg "$MAME_PATH/"
 
 echo "Enabling SSH on first reboot..."
 if [ ! -f "$BOOT_PATH/ssh" ]; then
@@ -164,8 +188,16 @@ fi
 
 echo "Checking for Wi-Fi configuration..."
 if [ -f "$SETUP_PATH/wpa_supplicant.conf" ]; then
+    echo "Found wpa_supplicant.conf in $SETUP_PATH. Backing up and copying to $BOOT_PATH..."
     backup_file "$BOOT_PATH/wpa_supplicant.conf"
-    sudo cp -u "$SETUP_PATH/wpa_supplicant.conf" "$BOOT_PATH/"
+    if sudo cp -u "$SETUP_PATH/wpa_supplicant.conf" "$BOOT_PATH/"; then
+        echo "wpa_supplicant.conf successfully copied to $BOOT_PATH."
+    else
+        echo "Failed to copy wpa_supplicant.conf to $BOOT_PATH! Please check permissions."
+    fi
+else
+    echo "No wpa_supplicant.conf found in $SETUP_PATH. Skipping Wi-Fi configuration copy."
+    echo "If you need Wi-Fi, see configs/wpa_supplicant.example.conf for a template."
 fi
 
 echo "Backing up existing runcommand scripts..."
@@ -173,8 +205,8 @@ backup_file "$RUNCOMMAND_START"
 backup_file "$RUNCOMMAND_END"
 
 echo "Copying new runcommand scripts..."
-sudo cp -u "$SETUP_PATH/runcommand-onstart.sh" "$RUNCOMMAND_START"
-sudo cp -u "$SETUP_PATH/runcommand-onend.sh" "$RUNCOMMAND_END"
+sudo cp -u scripts/runcommand_onstart.sh "$RUNCOMMAND_START"
+sudo cp -u scripts/runcommand_onend.sh "$RUNCOMMAND_END"
 
 echo "Creating systemd service for Super-AIO..."
 if [ ! -f "$SYSTEMD_SERVICE" ]; then
@@ -197,14 +229,14 @@ Nice=19
 WantedBy=multi-user.target
 EOF
 else
-    echo "Service file already exists, skipping creation."
+    echo "Super-AIO Service file already exists, skipping creation."
 fi
 
 echo "Creating systemd service for xboxdrv..."
 if [ ! -f "$XBOXDRV_SERVICE" ]; then
     sudo tee "$XBOXDRV_SERVICE" > /dev/null <<EOF
 [Unit]
-Description=Start xboxdrv at boot
+Description=Xboxdrv Service
 After=network.target
 
 [Service]
@@ -229,7 +261,7 @@ User=pi
 WantedBy=multi-user.target
 EOF
 else
-    echo "xboxdrv service already exists, skipping creation."
+    echo "Xboxdrv service already exists, skipping creation."
 fi
 
 echo "Reloading systemd and enabling services..."
@@ -245,5 +277,10 @@ sudo systemctl status saio.service
 echo "Checking xboxdrv service status..."
 sudo systemctl status xboxdrv
 
-echo "Rebooting system..."
-sudo reboot
+read -p "Installation complete. A reboot is required for all changes to take effect. Reboot now? [y/N]: " REBOOT_ANSWER
+if [[ "$REBOOT_ANSWER" =~ ^[Yy]$ ]]; then
+    echo "Rebooting system..."
+    sudo reboot
+else
+    echo "Reboot skipped. Please reboot manually before using Super-AIO."
+fi

@@ -1,0 +1,38 @@
+# OS/Editor/Tooling
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*.bak
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+
+# Shell history and logs
+*.log
+*.history
+
+# Backup files
+*~
+*.backup
+
+# Misc
+Thumbs.db
+
+# Ignore ROMs and user data (if ever present)
+roms/
+*.sav
+*.state
+
+# Ignore installer artifacts
+/home/pi/Super-AIO/
+/home/pi/Super-AIO-Setup/
+
+# Ignore USB mount points (if accidentally copied)
+/media/usb*/
