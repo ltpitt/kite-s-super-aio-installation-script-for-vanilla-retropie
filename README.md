@@ -86,6 +86,12 @@ bash scripts/sync-roms-from-usb.sh --help
 
 `co-co-combo-breaker.py` is a flexible utility for identifying button codes and monitoring for Select+Start combos to kill running emulators.
 
+#### How it works
+- The installer places this script in the `scripts/` folder and ensures it is executable.
+- It is automatically run in the background by the system for supported emulators (e.g., mame4all, pico8) via the `runcommand_onstart.sh` script.
+- When you press Select+Start on your gamepad, the script will kill the emulator process, allowing for a quick exit.
+- You can also run it manually for advanced usage or to identify button codes.
+
 #### Usage & Help
 
 ```bash
@@ -95,17 +101,3 @@ python3 scripts/co-co-combo-breaker.py --help
 > Run the script with `--help` to see all available options and usage examples. Requires Python 3 and the `evdev` module (`sudo pip3 install evdev`).
 
 ---
-
-## Script Permissions
-
-The installer (`install-saio.sh`) sets executable permissions for all scripts in the `scripts/` folder. If you add new scripts, you may need to run:
-
-```bash
-chmod +x scripts/your-script.sh
-```
-
----
-
-## .gitignore
-
-A sensible `.gitignore` is included to exclude Python cache, editor files, macOS files, backup/log files, and other common clutter.
