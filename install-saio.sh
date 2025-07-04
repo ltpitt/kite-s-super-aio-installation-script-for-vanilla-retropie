@@ -139,6 +139,18 @@ else
     echo "Python serial package is already installed, skipping."
 fi
 
+echo "Checking and installing Python evdev module for combo breaker..."
+if ! python3 -c 'import evdev' 2>/dev/null; then
+    if ! dpkg -l | grep -q "python3-pip"; then
+        echo "Installing python3-pip..."
+        sudo apt-get install python3-pip -y
+    fi
+    echo "Installing evdev module via pip3..."
+    sudo pip3 install evdev
+else
+    echo "Python evdev module is already installed, skipping."
+fi
+
 echo "Setting executable permissions..."
 FILES=(
     "../tester/pngview"
