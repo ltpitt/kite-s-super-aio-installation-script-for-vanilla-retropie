@@ -7,6 +7,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import textwrap
 
 try:
     from evdev import InputDevice, ecodes, list_devices
@@ -395,11 +396,35 @@ def identify_buttons(device_path, device_name=None):
     return 0
 
 
-def monitor_combo(device, combo_codes, kill_processes):
+def print_wrapped(label, value, width=38):
+    lines = textwrap.wrap(
+        str(value),
+        width=width,
+        break_long_words=True,
+        break_on_hyphens=False,
+    ) or [""]
+    print(f"{label}: {lines[0]}")
+    for line in lines[1:]:
+        print(f"  {line}")
+
+
+def monitor_combo(device, combo_codes, kill_processes, config_path):
+    print("Co-Co-Combo Breaker")
+    print("===================")
+    print_wrapped("Config", os.path.abspath(config_path))
+    print_wrapped("Device", device.name)
+    print_wrapped("Path", device.path)
     print(
-        f"Monitoring for the configured two-button combo on "
-        f"{device.path} ({device.name})..."
+        "Combo: "
+        + " + ".join(
+            f"{code} ({key_name(code)})" for code in combo_codes
+        )
     )
+    print(f"Stops: {', '.join(kill_processes)}")
+    print("-------------------")
+    print("Monitoring...")
+    print("Press both configured buttons to exit.")
+
     pressed_codes = set()
     for event in device.read_loop():
         if event.type != ecodes.EV_KEY:
@@ -539,7 +564,7 @@ def main():
 
     if args.identify:
         return identify_buttons(device.path, device.name)
-    monitor_combo(device, combo_codes, kill_processes)
+    monitor_combo(device, combo_codes, kill_processes, args.config)
     return 0
 
 
