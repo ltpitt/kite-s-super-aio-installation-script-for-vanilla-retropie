@@ -52,6 +52,15 @@ Backups, logs, and a rollback manifest are stored below:
   $BACKUP_ROOT
 
 This script does not copy Wi-Fi credentials or reboot the system.
+
+Emulator checks:
+  pcsx-rearmed -> /opt/retropie/emulators/pcsx-rearmed/pcsx
+  pifba        -> /opt/retropie/emulators/pifba/fba2x
+  mame4all    -> /opt/retropie/emulators/mame4all/mame
+
+The combo breaker runs with Python 3 and uses:
+  /home/pi/.config/super-aio/combo-breaker.conf
+The Super-AIO service remains on the system's Python 2 runtime.
 EOF
 }
 
