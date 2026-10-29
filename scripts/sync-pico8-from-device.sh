@@ -7,6 +7,7 @@ TARGET_HOME="${PICO8_TARGET_HOME:-/home/pi}"
 BACKUP_ROOT="$TARGET_HOME/pico8-transfer-backups"
 TARGET_ES_CONFIG="/etc/emulationstation/es_systems.cfg"
 TARGET_PICO8_GAMELIST="$TARGET_HOME/.emulationstation/gamelists/pico8/gamelist.xml"
+TARGET_RETROPIE_GAMELIST="/opt/retropie/configs/all/emulationstation/gamelists/pico8/gamelist.xml"
 RUN_DIR=""
 MANIFEST=""
 DRY_RUN=0
@@ -202,6 +203,8 @@ ET.ElementTree(root).write(
     xml_declaration=True,
 )
 PY
+    sudo -n install -D -o root -g root -m 0644 \
+        "$TARGET_PICO8_GAMELIST" "$TARGET_RETROPIE_GAMELIST"
 }
 
 plan_transfer() {
@@ -273,6 +276,7 @@ perform_transfer() {
     backup_entry "$TARGET_HOME/RetroPie/roms/pico8"
     backup_entry "$TARGET_HOME/scripts/python-superaio-custom-button"
     backup_entry "$TARGET_PICO8_GAMELIST"
+    backup_entry "$TARGET_RETROPIE_GAMELIST"
     backup_entry "$TARGET_ES_CONFIG"
 
     if ! confirm_change "Replace the target Pico-8 setup with the source copy?"; then

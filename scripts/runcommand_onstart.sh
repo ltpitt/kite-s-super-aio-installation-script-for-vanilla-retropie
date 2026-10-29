@@ -10,7 +10,20 @@ run_as_pi() {
   fi
 }
 
-if [ "$2" = "mame4all" ] || [ "$2" = "pico8" ]; then
+run_monitor_as_pi() {
+  if [ "$(id -un)" = "pi" ]; then
+    exec /usr/bin/python3 "$@"
+  else
+    exec /usr/sbin/runuser -u pi -- /usr/bin/python3 "$@"
+  fi
+}
+
+is_pico8_launch=0
+case "$1:$2:$3" in
+  *"/roms/pico8/"*) is_pico8_launch=1 ;;
+esac
+
+if [ "$2" = "mame4all" ] || [ "$2" = "pico8" ] || [ "$1" = "pico8" ] || [ "$is_pico8_launch" -eq 1 ]; then
   COMBO_BREAKER="/home/pi/.local/lib/super-aio/co-co-combo-breaker.py"
   COMBO_CONFIG="/home/pi/.config/super-aio/combo-breaker.conf"
   COMBO_PID_FILE="/tmp/super-aio-combo-breaker.pid"
@@ -31,7 +44,7 @@ if [ "$2" = "mame4all" ] || [ "$2" = "pico8" ]; then
   if [ -f "$COMBO_BREAKER" ] &&
     [ -f "$COMBO_CONFIG" ] &&
     run_as_pi "$COMBO_BREAKER" --check-config --config "$COMBO_CONFIG" >/dev/null 2>&1; then
-    run_as_pi "$COMBO_BREAKER" --config "$COMBO_CONFIG" &
+    run_monitor_as_pi "$COMBO_BREAKER" --config "$COMBO_CONFIG" &
     echo "$!" > "$COMBO_PID_FILE"
   else
     echo "Combo breaker is not configured for the gamepad; run install-saio.sh." >&2
