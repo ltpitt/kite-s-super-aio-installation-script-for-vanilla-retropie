@@ -438,8 +438,8 @@ ensure_combo_config() {
 
     printf '\nCombo breaker is not configured for the current gamepad.\n'
     printf 'The wizard will exclude the standard Kite SAIO Arduino Leonardo,\n'
-    printf 'select the gamepad, and capture SELECT and START by button press.\n'
-    if ! confirm_change "Configure Select+Start combo exit now?"; then
+    printf 'select the gamepad, and capture two buttons pressed together.\n'
+    if ! confirm_change "Configure the two-button combo exit now?"; then
         printf 'SKIPPED: combo-breaker gamepad configuration\n'
         return 0
     fi

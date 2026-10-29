@@ -119,25 +119,39 @@ def parse_config(config_path):
     if not device_path:
         raise ValueError("Configuration must include device_path")
 
-    try:
-        select_code = section.getint("select_code")
-        start_code = section.getint("start_code")
-    except ValueError as exc:
-        raise ValueError("Select and start codes must be integers") from exc
+    combo_codes_raw = section.get("combo_codes", "").split()
+    if combo_codes_raw:
+        if len(combo_codes_raw) != 2:
+            raise ValueError("combo_codes must contain exactly two button codes")
+        try:
+            combo_codes = [int(code) for code in combo_codes_raw]
+        except ValueError as exc:
+            raise ValueError("combo_codes must contain integers") from exc
+    else:
+        try:
+            combo_codes = [
+                section.getint("select_code"),
+                section.getint("start_code"),
+            ]
+        except ValueError as exc:
+            raise ValueError(
+                "Configuration must include combo_codes or select_code/start_code"
+            ) from exc
 
     kill_processes = section.get("kill_processes", "").split()
     if not kill_processes or any(not PROCESS_NAME.fullmatch(name) for name in kill_processes):
         raise ValueError("Configuration contains invalid process names")
-    if select_code == start_code:
-        raise ValueError("Select and start codes must be different")
+    if combo_codes[0] == combo_codes[1]:
+        raise ValueError("Combo button codes must be different")
 
     device = resolve_device(device_path, device_name or None)
     return {
         "device": device,
         "device_name": device_name,
         "device_path": device.path,
-        "select_code": select_code,
-        "start_code": start_code,
+        "combo_codes": combo_codes,
+        "select_code": combo_codes[0],
+        "start_code": combo_codes[1],
         "kill_processes": kill_processes,
     }
 
@@ -168,7 +182,24 @@ def gamepad_candidates(devices):
 
 
 def choose_gamepad():
-    candidates = gamepad_candidates(discover_devices())
+    devices = discover_devices()
+    default_device = next(
+        (
+            device
+            for device in devices
+            if device["path"] == DEFAULT_DEVICE
+            and device["has_key"]
+            and not device["is_kite_board"]
+        ),
+        None,
+    )
+    if default_device and prompt_yes_no(
+        f"Use the default gamepad {default_device['path']} "
+        f"({default_device['name']})?"
+    ):
+        return InputDevice(default_device["path"])
+
+    candidates = gamepad_candidates(devices)
 
     if not candidates:
         raise RuntimeError(
@@ -187,7 +218,7 @@ def choose_gamepad():
     if len(candidates) == 1:
         selected = candidates[0]
         if not prompt_yes_no(
-            f"Use {selected['path']} ({selected['name']}) for Select+Start?"
+            f"Use {selected['path']} ({selected['name']}) for the combo?"
         ):
             raise RuntimeError("Gamepad selection cancelled.")
         return InputDevice(selected["path"])
@@ -213,32 +244,49 @@ def choose_default_gamepad():
     return device
 
 
-def capture_button(device, label, used_codes):
-    print(f"\nPress {label} once on the selected gamepad.")
+def capture_combo(device):
+    print(
+        "\nPress and hold the two buttons you want to use together, "
+        "then release both."
+    )
     try:
         device.grab()
     except OSError:
         print("Warning: could not exclusively grab the device; continuing.")
 
-    code = None
+    active_codes = []
+    captured_codes = None
+    released_codes = set()
     try:
         for event in device.read_loop():
-            if event.type != ecodes.EV_KEY or event.value != 1:
+            if event.type != ecodes.EV_KEY:
                 continue
-            if event.code in used_codes:
-                print(f"Ignoring already-used button code {event.code}.")
-                continue
-            code = event.code
-            print(f"{label} detected: code={code} ({key_name(code)})")
-            break
-
-        if code is not None:
-            for event in device.read_loop():
-                if (
-                    event.type == ecodes.EV_KEY
-                    and event.code == code
-                    and event.value == 0
-                ):
+            if captured_codes is None and event.value == 1:
+                if event.code not in active_codes:
+                    active_codes.append(event.code)
+                    print(
+                        f"Button detected: code={event.code} "
+                        f"({key_name(event.code)})"
+                    )
+                if len(active_codes) == 2:
+                    captured_codes = tuple(active_codes)
+                    print(
+                        "Combo detected: "
+                        + " + ".join(
+                            f"{code} ({key_name(code)})"
+                            for code in captured_codes
+                        )
+                    )
+            elif captured_codes is None and event.value == 0:
+                if event.code in active_codes:
+                    active_codes.remove(event.code)
+            elif (
+                captured_codes is not None
+                and event.code in captured_codes
+                and event.value == 0
+            ):
+                released_codes.add(event.code)
+                if len(released_codes) == len(captured_codes):
                     break
     finally:
         try:
@@ -246,12 +294,12 @@ def capture_button(device, label, used_codes):
         except OSError:
             pass
 
-    if code is None:
-        raise RuntimeError(f"Could not read the {label} button.")
-    return code
+    if captured_codes is None:
+        raise RuntimeError("Could not read two buttons for the combo.")
+    return list(captured_codes)
 
 
-def write_config(config_path, device, select_code, start_code):
+def write_config(config_path, device, combo_codes):
     parent = os.path.dirname(os.path.abspath(config_path))
     parent_exists = os.path.isdir(parent)
     os.makedirs(parent, mode=0o700, exist_ok=True)
@@ -267,8 +315,9 @@ def write_config(config_path, device, select_code, start_code):
     parser["combo"] = {
         "device_name": device.name if device else "",
         "device_path": path,
-        "select_code": str(select_code),
-        "start_code": str(start_code),
+        "combo_codes": " ".join(str(code) for code in combo_codes),
+        "select_code": str(combo_codes[0]),
+        "start_code": str(combo_codes[1]),
         "kill_processes": " ".join(DEFAULT_KILL_PROCESSES),
     }
 
@@ -290,8 +339,7 @@ def create_default_config(config_path):
     write_config(
         config_path,
         device,
-        DEFAULT_SELECT_CODE,
-        DEFAULT_START_CODE,
+        [DEFAULT_SELECT_CODE, DEFAULT_START_CODE],
     )
     if device:
         print(
@@ -311,17 +359,18 @@ def create_default_config(config_path):
 
 def configure_combo(config_path):
     device = choose_gamepad()
-    select_code = capture_button(device, "SELECT", set())
-    start_code = capture_button(device, "START", {select_code})
+    combo_codes = capture_combo(device)
 
     print(
-        f"\nSelect+Start mapping: {select_code} ({key_name(select_code)}) + "
-        f"{start_code} ({key_name(start_code)})"
+        "\nSaved combo mapping: "
+        + " + ".join(
+            f"{code} ({key_name(code)})" for code in combo_codes
+        )
     )
     if not prompt_yes_no("Save this combo-breaker configuration?", default=True):
         raise RuntimeError("Combo-breaker configuration cancelled.")
 
-    write_config(config_path, device, select_code, start_code)
+    write_config(config_path, device, combo_codes)
     print(f"Saved combo-breaker configuration to {config_path}")
 
 
@@ -342,23 +391,24 @@ def identify_buttons(device_path, device_name=None):
     return 0
 
 
-def monitor_combo(device, select_code, start_code, kill_processes):
+def monitor_combo(device, combo_codes, kill_processes):
     print(
-        f"Monitoring for Select+Start combo on {device.path} ({device.name})..."
+        f"Monitoring for the configured two-button combo on "
+        f"{device.path} ({device.name})..."
     )
-    select_pressed = False
-    start_pressed = False
+    pressed_codes = set()
     for event in device.read_loop():
         if event.type != ecodes.EV_KEY:
             continue
         pressed = event.value in (1, 2)
-        if event.code == select_code:
-            select_pressed = pressed
-        elif event.code == start_code:
-            start_pressed = pressed
-        if select_pressed and start_pressed:
+        if event.code in combo_codes:
+            if pressed:
+                pressed_codes.add(event.code)
+            else:
+                pressed_codes.discard(event.code)
+        if all(code in pressed_codes for code in combo_codes):
             print(
-                f"Select+Start detected! Killing: {', '.join(kill_processes)}"
+                f"Configured combo detected! Killing: {', '.join(kill_processes)}"
             )
             for process in kill_processes:
                 subprocess.call(["killall", "-9", process])
@@ -369,7 +419,7 @@ def build_parser():
     parser = argparse.ArgumentParser(
         description=(
             "Co-Co-Combo Breaker: Identify button codes or monitor for "
-            "Select+Start combo to kill emulators."
+            "a configured two-button combo to kill emulators."
         )
     )
     parser.add_argument(
@@ -386,17 +436,17 @@ def build_parser():
     parser.add_argument(
         "--combo",
         action="store_true",
-        help="Monitor for Select+Start combo and kill processes",
+        help="Monitor for the configured two-button combo and kill processes",
     )
     parser.add_argument(
         "--configure",
         action="store_true",
-        help="Interactively select a gamepad and save Select+Start codes",
+        help="Select a gamepad and capture two buttons pressed together",
     )
     parser.add_argument(
         "--create-default-config",
         action="store_true",
-        help="Create a config with the detected gamepad and default button codes",
+        help="Create a config with the default device and button codes",
     )
     parser.add_argument(
         "--check-config",
@@ -504,24 +554,19 @@ def main():
         or (configuration["device"].path if configuration else None)
         or DEFAULT_DEVICE
     )
-    select_code = (
+    configured_combo = (
+        configuration["combo_codes"]
+        if configuration
+        else [DEFAULT_SELECT_CODE, DEFAULT_START_CODE]
+    )
+    combo_codes = [
         args.select_code
         if args.select_code is not None
-        else (
-            configuration["select_code"]
-            if configuration
-            else DEFAULT_SELECT_CODE
-        )
-    )
-    start_code = (
+        else configured_combo[0],
         args.start_code
         if args.start_code is not None
-        else (
-            configuration["start_code"]
-            if configuration
-            else DEFAULT_START_CODE
-        )
-    )
+        else configured_combo[1],
+    ]
     kill_processes = (
         args.kill
         if args.kill is not None
@@ -540,7 +585,7 @@ def main():
 
     if args.identify:
         return identify_buttons(device.path, device.name)
-    monitor_combo(device, select_code, start_code, kill_processes)
+    monitor_combo(device, combo_codes, kill_processes)
     return 0
 
 

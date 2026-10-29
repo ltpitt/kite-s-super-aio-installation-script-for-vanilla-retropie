@@ -94,14 +94,14 @@ bash scripts/sync-roms-from-usb.sh --help
 
 ### Co-Co-Combo Breaker
 
-`co-co-combo-breaker.py` is a flexible utility for identifying button codes and monitoring for Select+Start combos to kill running emulators.
+`co-co-combo-breaker.py` is a flexible utility for identifying button codes and monitoring for a configured two-button combo to kill running emulators.
 
 #### How it works
 - The installer copies this script to `/home/pi/.local/lib/super-aio/` as the stable runtime location used by RetroPie.
-- During setup, it identifies the standard Kite SAIO Arduino Leonardo and excludes it, then helps select the user's gamepad and capture its SELECT and START button codes.
+- During setup, it identifies the standard Kite SAIO Arduino Leonardo and excludes it, then defaults to `/dev/input/event1` and can capture any two gamepad buttons pressed together.
 - The selected device name, stable device path when available, and button codes are saved in `/home/pi/.config/super-aio/combo-breaker.conf`.
 - For supported emulators (e.g., `mame4all`, `pico8`), `runcommand_onstart.sh` validates the saved mapping and starts one background `python3` monitor as the `pi` user; `runcommand_onend.sh` stops it when the emulator exits.
-- When you press Select+Start on your gamepad, the script will kill the emulator process, allowing for a quick exit.
+- When you press the configured two-button combo on your gamepad, the script will kill the emulator process, allowing for a quick exit.
 - You can also run it manually for advanced usage or to identify button codes.
 
 #### Usage & Help
@@ -112,7 +112,7 @@ python3 scripts/co-co-combo-breaker.py --list-devices
 python3 scripts/co-co-combo-breaker.py --configure
 ```
 
-Running the script without arguments creates the default configuration when it is missing. Use `--configure` to capture custom button codes. `--combo` remains explicit so checking the script never starts a monitor unexpectedly. Requires Python 3 and the `evdev` module; the installer installs it when needed.
+Running the script without arguments creates the default configuration when it is missing. Use `--configure` to select the gamepad and capture two buttons pressed together. `--combo` remains explicit so checking the script never starts a monitor unexpectedly. Requires Python 3 and the `evdev` module; the installer installs it when needed.
 
 #### Checking the first-time setup
 
@@ -124,7 +124,7 @@ chmod +x install-saio.sh scripts/*.sh
 ./install-saio.sh
 ```
 
-When the combo-breaker prompt appears, answer `y`. If no configuration exists, the installer creates the documented defaults: `/dev/input/event1`, SELECT `314`, START `315`, and processes `mame pico8`. To choose another HID event node or capture custom button codes instead, run `--configure`. After setup, verify the saved mapping and runtime copy with:
+When the combo-breaker prompt appears, answer `y`. If no configuration exists, the installer creates the documented defaults: `/dev/input/event1`, SELECT `314`, START `315`, and processes `mame pico8`. To choose another HID event node or capture a custom two-button combo, run `--configure`. After setup, verify the saved mapping and runtime copy with:
 
 ```bash
 python3 /home/pi/.local/lib/super-aio/co-co-combo-breaker.py \
