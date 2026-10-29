@@ -430,12 +430,12 @@ def build_parser():
         "--device",
         "-d",
         default=None,
-        help=f"Input device path (default: {DEFAULT_DEVICE})",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--identify",
         action="store_true",
-        help="Identify button codes (prints all key events)",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--configure",
@@ -445,17 +445,17 @@ def build_parser():
     parser.add_argument(
         "--check-config",
         action="store_true",
-        help="Validate the saved combo-breaker configuration and device",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--list-devices",
         action="store_true",
-        help="List available input devices and exit",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--config",
         default=DEFAULT_CONFIG,
-        help=f"Saved configuration path (default: {DEFAULT_CONFIG})",
+        help=argparse.SUPPRESS,
     )
     return parser
 
