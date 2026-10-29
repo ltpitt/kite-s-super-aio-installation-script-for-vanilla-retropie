@@ -9,6 +9,7 @@ BACKUP_ROOT="$SETUP_DIR/backups/install-saio"
 REPO_URL="https://github.com/geebles/Super-AIO.git"
 REPO_PATH="/home/pi/Super-AIO"
 SAIO_RELEASE_PATH="$REPO_PATH/release/saio"
+RETROPIE_SETUP_PATH="/home/pi/RetroPie-Setup"
 PI_USER="pi"
 PI_HOME="/home/$PI_USER"
 PI_GROUP="$(id -gn "$PI_USER" 2>/dev/null || printf '%s' "$PI_USER")"
@@ -20,10 +21,13 @@ RUNCOMMAND_START_TARGET="$CONFIG_ROOT/all/runcommand-onstart.sh"
 RUNCOMMAND_END_TARGET="$CONFIG_ROOT/all/runcommand-onend.sh"
 FBA_TARGET="$CONFIG_ROOT/fba/fba2x.cfg"
 MAME_TARGET="$CONFIG_ROOT/mame-mame4all/mame.cfg"
+PCSX_TARGET="$CONFIG_ROOT/psx/pcsx/pcsx.cfg"
 ASOUND_TARGET="/etc/asound.conf"
 USER_ASOUND_TARGET="$PI_HOME/.asoundrc"
 SYSTEMD_SERVICE="/etc/systemd/system/saio.service"
 SSH_MARKER="$BOOT_ROOT/ssh"
+COMBO_CONFIG="$PI_HOME/.config/super-aio/combo-breaker.conf"
+COMBO_BREAKER_TARGET="$PI_HOME/.local/lib/super-aio/co-co-combo-breaker.py"
 
 RUN_DIR=""
 LOG_FILE=""
@@ -38,6 +42,7 @@ usage() {
     cat <<EOF
 Usage:
   $0                 Bootstrap missing dependencies and apply approved configuration changes.
+  $0 --dry-run       Inspect the device and print the complete planned command sequence.
   $0 --snapshot-only Snapshot active configs and exit without changing the system.
   $0 --rollback DIR  Restore files and service state from a previous run in DIR.
   $0 --help          Show this help.
@@ -47,6 +52,15 @@ Backups, logs, and a rollback manifest are stored below:
   $BACKUP_ROOT
 
 This script does not copy Wi-Fi credentials or reboot the system.
+
+Emulator checks:
+  pcsx-rearmed -> /opt/retropie/emulators/pcsx-rearmed/pcsx
+  pifba        -> /opt/retropie/emulators/pifba/fba2x
+  mame4all    -> /opt/retropie/emulators/mame4all/mame
+
+The combo breaker runs with Python 3 and uses:
+  /home/pi/.config/super-aio/combo-breaker.conf
+The Super-AIO service remains on the system's Python 2 runtime.
 EOF
 }
 
@@ -81,6 +95,15 @@ package_installed() {
     local package="$1"
     dpkg-query -W -f='${Status}' "$package" 2>/dev/null |
         grep -q '^install ok installed$'
+}
+
+emulator_binary() {
+    case "$1" in
+        pcsx-rearmed) printf '/opt/retropie/emulators/pcsx-rearmed/pcsx' ;;
+        pifba) printf '/opt/retropie/emulators/pifba/fba2x' ;;
+        mame4all) printf '/opt/retropie/emulators/mame4all/mame' ;;
+        *) return 1 ;;
+    esac
 }
 
 evdev_importable() {
@@ -131,7 +154,6 @@ capture_initial_state() {
     state_set python_serial "$(package_installed python-serial && printf installed || printf missing)"
     state_set python3_pip "$(package_installed python3-pip && printf installed || printf missing)"
     state_set evdev_import "$(evdev_importable && printf present || printf missing)"
-    state_set evdev_pip "$(python3 -m pip show evdev >/dev/null 2>&1 && printf present || printf missing)"
     state_set ssh_marker "$([[ -e "$SSH_MARKER" ]] && printf present || printf missing)"
     state_set service_file "$([[ -e "$SYSTEMD_SERVICE" ]] && printf present || printf missing)"
 
@@ -171,6 +193,8 @@ snapshot_configs() {
         "$MAME_TARGET" \
         "$CONFIG_ROOT/psx/emulators.cfg" \
         "$CONFIG_ROOT/psx/pcsx/pcsx.cfg" \
+        "$COMBO_CONFIG" \
+        "$COMBO_BREAKER_TARGET" \
         /opt/retropie/supplementary/splashscreen/asplashscreen.sh \
         "$SYSTEMD_SERVICE"
     do
@@ -282,24 +306,19 @@ apply_template() {
 apply_user_asoundrc() {
     local target="$USER_ASOUND_TARGET"
     local proposed_file
+    if [[ -e "$target" ]]; then
+        printf '\n=== User ALSA configuration ===\n'
+        printf 'SKIP: user ALSA config already exists: %s\n' "$target"
+        return 0
+    fi
+
     proposed_file="$(mktemp)"
     printf 'pcm.!default {\n\ttype hw\n\tcard 1\n}\n\nctl.!default {\n\ttype hw\n\tcard 1\n}\n' > "$proposed_file"
 
     printf '\n=== User ALSA configuration ===\n'
-    if [[ -f "$target" ]] && cmp -s -- "$proposed_file" "$target"; then
-        printf 'Current file already matches the proposed configuration; no change needed.\n'
-        rm -f -- "$proposed_file"
-        return 0
-    fi
-
-    if [[ -f "$target" ]]; then
-        diff -u --label "current: $target" --label "proposed: $target" "$target" "$proposed_file" || true
-    else
-        printf 'Current file: %s (does not exist)\nProposed configuration:\n' "$target"
-        sed 's/^/  /' "$proposed_file"
-    fi
-
-    if confirm_change "Apply the user ALSA configuration?"; then
+    printf 'Current file: %s (does not exist)\nProposed configuration:\n' "$target"
+    sed 's/^/  /' "$proposed_file"
+    if confirm_change "Create the user ALSA configuration?"; then
         record_before_change "$target"
         as_root install -D -o "$PI_USER" -g "$PI_GROUP" -m 0644 -- "$proposed_file" "$target"
         printf 'APPLIED: %s\n' "$target"
@@ -352,6 +371,35 @@ ensure_repository() {
     done
 }
 
+ensure_emulator() {
+    local module="$1"
+    local binary
+    binary="$(emulator_binary "$module")"
+    if [[ -x "$binary" ]]; then
+        printf 'EMULATOR OK: %s (%s)\n' "$module" "$binary"
+        return 0
+    fi
+
+    printf '\nEMULATOR MISSING: %s\n' "$module"
+    if [[ ! -x "$binary" ]]; then
+        printf 'Expected binary: %s\n' "$binary"
+    fi
+    if [[ ! -d "$RETROPIE_SETUP_PATH" ]]; then
+        if ! confirm_change "Clone RetroPie-Setup before installing $module?"; then
+            fail "RetroPie-Setup is required to install $module."
+        fi
+        as_pi git clone --depth=1 \
+            https://github.com/RetroPie/RetroPie-Setup.git \
+            "$RETROPIE_SETUP_PATH"
+    fi
+    if ! confirm_change "Install the RetroPie $module module?"; then
+        fail "Required emulator is missing: $module"
+    fi
+    as_root "$RETROPIE_SETUP_PATH/retropie_packages.sh" "$module" install
+    [[ -x "$binary" ]] || fail "RetroPie did not install the expected $module binary: $binary"
+    printf 'INSTALLED EMULATOR: %s\n' "$module"
+}
+
 ensure_python_serial() {
     local package="python-serial"
     if package_installed "$package"; then
@@ -385,6 +433,68 @@ ensure_evdev() {
     printf 'INSTALLED: Python evdev module\n'
 }
 
+combo_config_valid() {
+    as_pi python3 "$COMBO_BREAKER_TARGET" \
+        --check-config \
+        --config "$COMBO_CONFIG" >/dev/null 2>&1
+}
+
+ensure_combo_program() {
+    apply_template \
+        "$SCRIPT_SOURCE/co-co-combo-breaker.py" \
+        "$COMBO_BREAKER_TARGET" \
+        "Installed combo-breaker runtime" \
+        "$PI_USER" \
+        "$PI_GROUP" \
+        0644
+}
+
+ensure_combo_config() {
+    if combo_config_valid; then
+        printf 'COMBO BREAKER CONFIG OK: %s\n' "$COMBO_CONFIG"
+        return 0
+    fi
+
+    if [[ ! -f "$COMBO_CONFIG" ]]; then
+        printf '\nCombo-breaker configuration is missing.\n'
+        printf 'The installer can create the documented combo-breaker defaults:\n'
+        printf '  device: Arduino LLC Arduino Leonardo (event4/by-id when available)\n'
+        printf '  SELECT: 314\n'
+        printf '  START: 315\n'
+        printf '  processes: mame pico8\n'
+        if ! confirm_change "Create the default combo-breaker configuration?"; then
+            printf 'SKIPPED: combo-breaker default configuration\n'
+            return 0
+        fi
+
+        record_before_change "$COMBO_CONFIG"
+        as_pi env COMBO_BREAKER_INIT_ONLY=1 python3 "$COMBO_BREAKER_TARGET" \
+            --config "$COMBO_CONFIG"
+        if combo_config_valid; then
+            printf 'DEFAULT COMBO BREAKER CONFIGURED: %s\n' "$COMBO_CONFIG"
+        else
+            printf 'WARNING: default combo-breaker config was created but the device is not currently valid.\n'
+            printf 'Reconnect the gamepad and run --configure if needed.\n'
+        fi
+        return 0
+    fi
+
+    printf '\nCombo breaker is not configured for the current gamepad.\n'
+    printf 'The wizard will default to the Kite SAIO Arduino Leonardo,\n'
+    printf 'then capture two buttons pressed together.\n'
+    if ! confirm_change "Configure the two-button combo exit now?"; then
+        printf 'SKIPPED: combo-breaker gamepad configuration\n'
+        return 0
+    fi
+
+    record_before_change "$COMBO_CONFIG"
+    as_pi python3 "$COMBO_BREAKER_TARGET" \
+        --configure \
+        --config "$COMBO_CONFIG"
+    combo_config_valid || fail "Combo-breaker configuration did not validate."
+    printf 'COMBO BREAKER CONFIGURED: %s\n' "$COMBO_CONFIG"
+}
+
 ensure_executable_group() {
     local description="$1"
     shift
@@ -413,10 +523,14 @@ ensure_executable_group() {
 }
 
 apply_ssh_marker() {
-    [[ -e "$SSH_MARKER" ]] && {
+    if [[ -e "$SSH_MARKER" ]]; then
         printf 'SSH MARKER OK: %s\n' "$SSH_MARKER"
         return 0
-    }
+    fi
+    if ssh_configured; then
+        printf 'SSH SERVICE OK: SSH is already active or enabled; no boot marker needed.\n'
+        return 0
+    fi
 
     printf '\nSSH marker is missing: %s\n' "$SSH_MARKER"
     if ! confirm_change "Create the SSH enablement marker?"; then
@@ -428,25 +542,35 @@ apply_ssh_marker() {
     printf 'APPLIED: %s\n' "$SSH_MARKER"
 }
 
+ssh_unit_active_or_enabled() {
+    local unit
+    for unit in ssh.service sshd.service; do
+        if systemctl is-active --quiet "$unit" 2>/dev/null ||
+            systemctl is-enabled --quiet "$unit" 2>/dev/null; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+ssh_process_or_listener_active() {
+    if command -v pgrep >/dev/null 2>&1 &&
+        pgrep -x sshd >/dev/null 2>&1; then
+        return 0
+    fi
+    if command -v ss >/dev/null 2>&1 &&
+        ss -ltn 2>/dev/null | awk '$4 ~ /:22$/ { found=1 } END { exit !found }'; then
+        return 0
+    fi
+    return 1
+}
+
+ssh_configured() {
+    ssh_unit_active_or_enabled || ssh_process_or_listener_active
+}
+
 write_service_template() {
-    cat > "$RUN_DIR/saio.service.proposed" <<EOF
-[Unit]
-Description=Super-AIO Service
-After=network.target
-
-[Service]
-ExecStart=/usr/bin/nice -n 19 /usr/bin/python3 $SAIO_RELEASE_PATH/saio-osd.py
-Restart=always
-User=$PI_USER
-WorkingDirectory=$SAIO_RELEASE_PATH/
-StandardOutput=syslog
-StandardError=syslog
-SyslogIdentifier=saio-service
-Nice=19
-
-[Install]
-WantedBy=multi-user.target
-EOF
+    service_template > "$RUN_DIR/saio.service.proposed"
 }
 
 service_enabled() {
@@ -455,6 +579,14 @@ service_enabled() {
 
 service_active() {
     as_root systemctl is-active --quiet saio.service
+}
+
+service_enabled_readonly() {
+    systemctl is-enabled --quiet saio.service
+}
+
+service_active_readonly() {
+    systemctl is-active --quiet saio.service
 }
 
 ensure_service() {
@@ -661,12 +793,294 @@ preflight() {
         "$CONFIG_SOURCE/config-saio.txt" \
         "$CONFIG_SOURCE/fba2x.cfg" \
         "$CONFIG_SOURCE/mame.cfg" \
+        "$CONFIG_SOURCE/pcsx-rearmed.cfg" \
         "$SCRIPT_SOURCE/runcommand_onstart.sh" \
         "$SCRIPT_SOURCE/runcommand_onend.sh" \
         "$SCRIPT_SOURCE/co-co-combo-breaker.py"
     do
         [[ -f "$required" ]] || fail "Required repository file is missing: $required"
     done
+}
+
+PLAN_APT_UPDATE=0
+
+plan_template() {
+    local source="$1"
+    local target="$2"
+    local description="$3"
+    local owner="${4:-root}"
+    local group="${5:-root}"
+    local mode="${6:-0644}"
+
+    printf '\n[%s]\n' "$description"
+    if [[ ! -f "$source" ]]; then
+        printf 'BLOCKED: source is missing: %s\n' "$source"
+        return 0
+    fi
+    if [[ -f "$target" ]] && cmp -s -- "$source" "$target"; then
+        printf 'SKIP: active file already matches.\n'
+        return 0
+    fi
+
+    if [[ -f "$target" ]]; then
+        printf 'WOULD UPDATE: %s\n' "$target"
+        diff -u --label "current: $target" --label "proposed: $source" "$target" "$source" || true
+    else
+        printf 'WOULD CREATE: %s\n' "$target"
+    fi
+    printf 'COMMAND: sudo install -D -o %s -g %s -m %s %q %q\n' \
+        "$owner" "$group" "$mode" "$source" "$target"
+}
+
+plan_user_asoundrc() {
+    local proposed
+    proposed="$(printf 'pcm.!default {\n\ttype hw\n\tcard 1\n}\n\nctl.!default {\n\ttype hw\n\tcard 1\n}\n')"
+
+    printf '\n[User ALSA configuration]\n'
+    if [[ -e "$USER_ASOUND_TARGET" ]]; then
+        printf 'SKIP: preserve existing user ALSA config: %s\n' "$USER_ASOUND_TARGET"
+        return 0
+    fi
+    printf 'WOULD CREATE: %s\n' "$USER_ASOUND_TARGET"
+    printf 'COMMAND: sudo install -D -o %s -g %s -m 0644 /dev/stdin %q <<\\''EOF\\''\n%sEOF\n' \
+        "$PI_USER" "$PI_GROUP" "$USER_ASOUND_TARGET" "$proposed"
+}
+
+plan_package() {
+    local package="$1"
+    if package_installed "$package"; then
+        printf 'SKIP PACKAGE: %s is already installed.\n' "$package"
+        return 0
+    fi
+
+    printf '\n[Package: %s]\n' "$package"
+    if ((PLAN_APT_UPDATE == 0)); then
+        printf 'COMMAND: sudo apt-get update\n'
+        PLAN_APT_UPDATE=1
+    fi
+    printf 'COMMAND: sudo apt-get install -y %q\n' "$package"
+}
+
+plan_repository() {
+    local required
+    printf '\n[Super-AIO repository]\n'
+    if [[ -d "$SAIO_RELEASE_PATH" ]]; then
+        printf 'SKIP: repository and release directory already exist.\n'
+    elif [[ ! -e "$REPO_PATH" ]]; then
+        printf 'WOULD CLONE: %s\n' "$REPO_PATH"
+        printf 'COMMAND: git clone --depth=1 %q %q\n' "$REPO_URL" "$REPO_PATH"
+        return 0
+    else
+        printf 'BLOCKED: %s exists but its release directory is missing.\n' "$REPO_PATH"
+        return 0
+    fi
+
+    for required in \
+        "$SAIO_RELEASE_PATH/saio-osd.py" \
+        "$SAIO_RELEASE_PATH/python-serial_2.6-1.1_all.deb" \
+        "$SAIO_RELEASE_PATH/autostart.sh"
+    do
+        if [[ -f "$required" ]]; then
+            printf 'CHECK: present %s\n' "$required"
+        else
+            printf 'BLOCKED: required repository file is missing: %s\n' "$required"
+        fi
+    done
+}
+
+plan_emulator() {
+    local module="$1"
+    local binary
+    binary="$(emulator_binary "$module")"
+    printf '\n[Emulator: %s]\n' "$module"
+    if [[ -x "$binary" ]]; then
+        printf 'SKIP: binary is present: %s\n' "$binary"
+        return 0
+    fi
+    printf 'WOULD INSTALL: %s\n' "$module"
+    printf 'Expected binary after install: %s\n' "$binary"
+    if [[ ! -d "$RETROPIE_SETUP_PATH" ]]; then
+        printf 'COMMAND: git clone --depth=1 https://github.com/RetroPie/RetroPie-Setup.git %q\n' "$RETROPIE_SETUP_PATH"
+    fi
+    printf 'COMMAND: sudo %q/retropie_packages.sh %q install\n' "$RETROPIE_SETUP_PATH" "$module"
+}
+
+plan_python_serial() {
+    printf '\n[Python serial package]\n'
+    if package_installed python-serial; then
+        printf 'SKIP PACKAGE: python-serial is already installed.\n'
+        return 0
+    fi
+    printf 'COMMAND: sudo dpkg -i %q\n' "$SAIO_RELEASE_PATH/python-serial_2.6-1.1_all.deb"
+    printf 'FALLBACK COMMAND: sudo apt-get install -f -y\n'
+}
+
+plan_evdev() {
+    printf '\n[Python evdev module]\n'
+    if evdev_importable; then
+        printf 'SKIP MODULE: evdev imports successfully.\n'
+        return 0
+    fi
+    printf 'CHECK: python3-pip\n'
+    plan_package python3-pip
+    printf 'COMMAND: sudo python3 -m pip install evdev\n'
+}
+
+plan_combo_program() {
+    plan_template \
+        "$SCRIPT_SOURCE/co-co-combo-breaker.py" \
+        "$COMBO_BREAKER_TARGET" \
+        "Installed combo-breaker runtime" \
+        "$PI_USER" \
+        "$PI_GROUP" \
+        0644
+}
+
+plan_combo_config() {
+    local helper="$COMBO_BREAKER_TARGET"
+    printf '\n[Combo-breaker configuration]\n'
+    if [[ ! -f "$COMBO_BREAKER_TARGET" ]]; then
+        helper="$SCRIPT_SOURCE/co-co-combo-breaker.py"
+        printf 'NOTE: runtime helper will be installed before this check.\n'
+    fi
+    if [[ -f "$COMBO_CONFIG" ]] &&
+        python3 "$helper" --check-config >/dev/null 2>&1; then
+        printf 'SKIP: configuration is valid for the current device.\n'
+        return 0
+    fi
+    if [[ ! -f "$COMBO_CONFIG" ]]; then
+        printf 'WOULD CREATE DEFAULT CONFIG: %s\n' "$COMBO_CONFIG"
+        printf 'COMMAND: COMBO_BREAKER_INIT_ONLY=1 python3 %q\n' "$COMBO_BREAKER_TARGET"
+    else
+        printf 'WOULD RECONFIGURE: %s\n' "$COMBO_CONFIG"
+        printf 'COMMAND: python3 %q --configure\n' "$COMBO_BREAKER_TARGET"
+    fi
+}
+
+plan_executable_group() {
+    local description="$1"
+    shift
+    local file
+    local missing=()
+
+    for file in "$@"; do
+        [[ -f "$file" ]] || continue
+        [[ -x "$file" ]] || missing+=("$file")
+    done
+    if ((${#missing[@]} == 0)); then
+        printf 'SKIP PERMISSIONS: %s are already executable.\n' "$description"
+        return 0
+    fi
+    printf '\n[Executable permissions: %s]\n' "$description"
+    printf 'COMMAND: sudo chmod +x --'
+    printf ' %q' "${missing[@]}"
+    printf '\n'
+}
+
+service_template() {
+    cat <<EOF
+[Unit]
+Description=Super-AIO Service
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/nice -n 19 /usr/bin/python $SAIO_RELEASE_PATH/saio-osd.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+
+EOF
+}
+
+plan_service() {
+    local service_changed=0
+    printf '\n[Super-AIO systemd service]\n'
+    if [[ -f "$SYSTEMD_SERVICE" ]] &&
+        cmp -s <(service_template) "$SYSTEMD_SERVICE"; then
+        printf 'SKIP: service file already matches.\n'
+    else
+        service_changed=1
+        if [[ -f "$SYSTEMD_SERVICE" ]]; then
+            printf 'WOULD UPDATE: %s\n' "$SYSTEMD_SERVICE"
+            diff -u \
+                --label "current: $SYSTEMD_SERVICE" \
+                --label "proposed: $SYSTEMD_SERVICE" \
+                "$SYSTEMD_SERVICE" <(service_template) || true
+        else
+            printf 'WOULD CREATE: %s\n' "$SYSTEMD_SERVICE"
+        fi
+        printf 'COMMAND: write generated unit to %q\n' "$SYSTEMD_SERVICE"
+        printf 'COMMAND: sudo systemctl daemon-reload\n'
+    fi
+
+    if service_enabled_readonly; then
+        printf 'SKIP: saio.service is enabled.\n'
+    else
+        printf 'COMMAND: sudo systemctl enable saio.service\n'
+    fi
+    if service_active_readonly; then
+        if ((service_changed)); then
+            printf 'COMMAND: sudo systemctl restart saio.service\n'
+        else
+            printf 'SKIP: saio.service is active.\n'
+        fi
+    else
+        printf 'COMMAND: sudo systemctl start saio.service\n'
+    fi
+}
+
+run_dry_run() {
+    local -a saio_binaries setup_scripts
+
+    preflight
+    PLAN_APT_UPDATE=0
+    printf 'DRY RUN ONLY: no sudo authentication, writes, package changes, service changes, or reboot.\n'
+    printf 'The following is the ordered plan for the current device state.\n'
+
+    plan_repository
+    plan_emulator pcsx-rearmed
+    plan_emulator pifba
+    plan_emulator mame4all
+    plan_package libpng12-0
+    plan_python_serial
+    plan_evdev
+    plan_combo_program
+    plan_combo_config
+
+    saio_binaries=(
+        "$SAIO_RELEASE_PATH/../tester/pngview"
+        "$SAIO_RELEASE_PATH/osd/saio-osd"
+        "$SAIO_RELEASE_PATH/rfkill/rfkill"
+        "$SAIO_RELEASE_PATH/flash/flash.sh"
+    )
+    shopt -s nullglob
+    setup_scripts=("$SCRIPT_SOURCE"/*.sh "$SCRIPT_SOURCE"/*.py)
+    plan_executable_group "Super-AIO binaries" "${saio_binaries[@]}"
+    plan_executable_group "repository setup scripts" "${setup_scripts[@]}"
+
+    plan_template "$CONFIG_SOURCE/config.txt" "$BOOT_ROOT/config.txt" "Raspberry Pi boot config"
+    plan_template "$CONFIG_SOURCE/config-saio.txt" "$BOOT_ROOT/config-saio.txt" "Super-AIO boot config"
+    plan_template "$CONFIG_SOURCE/asound.conf" "$ASOUND_TARGET" "System ALSA config"
+    plan_user_asoundrc
+    plan_template "$CONFIG_SOURCE/fba2x.cfg" "$FBA_TARGET" "PiFBA config"
+    plan_template "$CONFIG_SOURCE/mame.cfg" "$MAME_TARGET" "MAME4All main config"
+    plan_template "$CONFIG_SOURCE/pcsx-rearmed.cfg" "$PCSX_TARGET" "PCSX-ReARMed standalone config" "$PI_USER" "$PI_GROUP" 0644
+    plan_template "$SAIO_RELEASE_PATH/autostart.sh" "$AUTOSTART_TARGET" "EmulationStation autostart config"
+    plan_template "$SCRIPT_SOURCE/runcommand_onstart.sh" "$RUNCOMMAND_START_TARGET" "RetroPie game-start hook" root root 0755
+    plan_template "$SCRIPT_SOURCE/runcommand_onend.sh" "$RUNCOMMAND_END_TARGET" "RetroPie game-end hook" root root 0755
+
+    printf '\n[SSH enablement marker]\n'
+    if [[ -e "$SSH_MARKER" ]]; then
+        printf 'SKIP: %s already exists.\n' "$SSH_MARKER"
+    elif ssh_configured; then
+        printf 'SKIP: SSH is already active or enabled; no boot marker is needed.\n'
+    else
+        printf 'COMMAND: sudo install -D -o root -g root -m 0644 /dev/null %q\n' "$SSH_MARKER"
+    fi
+
+    plan_service
+    printf '\nEND DRY RUN: no changes were made.\n'
 }
 
 run_installation() {
@@ -684,9 +1098,14 @@ run_installation() {
     fi
 
     ensure_repository
+    ensure_emulator pcsx-rearmed
+    ensure_emulator pifba
+    ensure_emulator mame4all
     ensure_package libpng12-0
     ensure_python_serial
     ensure_evdev
+    ensure_combo_program
+    ensure_combo_config
 
     saio_binaries=(
         "$SAIO_RELEASE_PATH/../tester/pngview"
@@ -706,6 +1125,7 @@ run_installation() {
     apply_user_asoundrc
     apply_template "$CONFIG_SOURCE/fba2x.cfg" "$FBA_TARGET" "PiFBA config"
     apply_template "$CONFIG_SOURCE/mame.cfg" "$MAME_TARGET" "MAME4All main config"
+    apply_template "$CONFIG_SOURCE/pcsx-rearmed.cfg" "$PCSX_TARGET" "PCSX-ReARMed standalone config" "$PI_USER" "$PI_GROUP" 0644
     apply_template "$SAIO_RELEASE_PATH/autostart.sh" "$AUTOSTART_TARGET" "EmulationStation autostart config"
     apply_template "$SCRIPT_SOURCE/runcommand_onstart.sh" "$RUNCOMMAND_START_TARGET" "RetroPie game-start hook" root root 0755
     apply_template "$SCRIPT_SOURCE/runcommand_onend.sh" "$RUNCOMMAND_END_TARGET" "RetroPie game-end hook" root root 0755
@@ -728,6 +1148,13 @@ main() {
                 return 2
             }
             rollback_run "$2"
+            ;;
+        --dry-run)
+            [[ $# -eq 1 ]] || {
+                usage >&2
+                return 2
+            }
+            run_dry_run
             ;;
         --snapshot-only|"")
             [[ $# -le 1 ]] || {
