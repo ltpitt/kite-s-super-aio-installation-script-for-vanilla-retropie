@@ -424,8 +424,7 @@ ensure_combo_config() {
         fi
 
         record_before_change "$COMBO_CONFIG"
-        as_pi python3 "$COMBO_BREAKER_TARGET" \
-            --create-default-config \
+        as_pi env COMBO_BREAKER_INIT_ONLY=1 python3 "$COMBO_BREAKER_TARGET" \
             --config "$COMBO_CONFIG"
         if combo_config_valid; then
             printf 'DEFAULT COMBO BREAKER CONFIGURED: %s\n' "$COMBO_CONFIG"

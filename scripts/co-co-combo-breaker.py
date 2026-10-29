@@ -443,35 +443,9 @@ def build_parser():
         help="Select a gamepad and capture two buttons pressed together",
     )
     parser.add_argument(
-        "--create-default-config",
-        action="store_true",
-        help="Create a config with the default device and button codes",
-    )
-    parser.add_argument(
         "--check-config",
         action="store_true",
         help="Validate the saved combo-breaker configuration and device",
-    )
-    parser.add_argument(
-        "--select-code",
-        type=int,
-        default=None,
-        help=f"Button code for SELECT (default: {DEFAULT_SELECT_CODE})",
-    )
-    parser.add_argument(
-        "--start-code",
-        type=int,
-        default=None,
-        help=f"Button code for START (default: {DEFAULT_START_CODE})",
-    )
-    parser.add_argument(
-        "--kill",
-        nargs="+",
-        default=None,
-        help=(
-            "Process names to kill on combo "
-            f"(default: {' '.join(DEFAULT_KILL_PROCESSES)})"
-        ),
     )
     parser.add_argument(
         "--list-devices",
@@ -502,9 +476,10 @@ def main():
             return 1
         return 0
 
-    if args.create_default_config:
+    if os.environ.get("COMBO_BREAKER_INIT_ONLY") == "1":
         try:
-            create_default_config(args.config)
+            if not os.path.exists(args.config):
+                create_default_config(args.config)
         except (OSError, RuntimeError, ValueError) as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return 1
@@ -522,7 +497,7 @@ def main():
         )
         return 0
 
-    if not (args.identify or args.configure or args.create_default_config or args.check_config):
+    if not (args.identify or args.configure or args.check_config):
         if not os.path.exists(args.config):
             try:
                 create_default_config(args.config)
@@ -549,22 +524,11 @@ def main():
         if configuration
         else [DEFAULT_SELECT_CODE, DEFAULT_START_CODE]
     )
-    combo_codes = [
-        args.select_code
-        if args.select_code is not None
-        else configured_combo[0],
-        args.start_code
-        if args.start_code is not None
-        else configured_combo[1],
-    ]
+    combo_codes = configured_combo
     kill_processes = (
-        args.kill
-        if args.kill is not None
-        else (
-            configuration["kill_processes"]
-            if configuration
-            else DEFAULT_KILL_PROCESSES
-        )
+        configuration["kill_processes"]
+        if configuration
+        else DEFAULT_KILL_PROCESSES
     )
 
     try:
