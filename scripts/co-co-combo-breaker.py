@@ -18,7 +18,11 @@ except ImportError as exc:
     EVDEV_IMPORT_ERROR = exc
 
 
-DEFAULT_DEVICE = "/dev/input/event1"
+DEFAULT_DEVICE = "/dev/input/event4"
+DEFAULT_DEVICE_STABLE_PATH = (
+    "/dev/input/by-id/usb-Arduino_LLC_Arduino_Leonardo_HIDAF-if02-event-joystick"
+)
+DEFAULT_DEVICE_NAME = "Arduino LLC Arduino Leonardo"
 DEFAULT_SELECT_CODE = 314
 DEFAULT_START_CODE = 315
 DEFAULT_KILL_PROCESSES = ["mame", "pico8"]
@@ -36,6 +40,12 @@ def require_evdev():
 def is_kite_saio_board(name):
     normalized = name.casefold()
     return "arduino" in normalized and "leonardo" in normalized
+
+
+def default_device_path():
+    if os.path.exists(DEFAULT_DEVICE_STABLE_PATH):
+        return DEFAULT_DEVICE_STABLE_PATH
+    return DEFAULT_DEVICE
 
 
 def stable_device_path(device_path):
@@ -175,10 +185,7 @@ def gamepad_candidates(devices):
         for device in devices
         if device["has_key"] and not device["is_kite_board"]
     ]
-    return sorted(
-        candidates,
-        key=lambda device: (device["path"] != DEFAULT_DEVICE, device["path"]),
-    )
+    return sorted(candidates, key=lambda device: device["path"])
 
 
 def choose_gamepad():
@@ -187,14 +194,12 @@ def choose_gamepad():
         (
             device
             for device in devices
-            if device["path"] == DEFAULT_DEVICE
-            and device["has_key"]
-            and not device["is_kite_board"]
+            if device["name"] == DEFAULT_DEVICE_NAME and device["has_key"]
         ),
         None,
     )
     if default_device and prompt_yes_no(
-        f"Use the default gamepad {default_device['path']} "
+        f"Use the default Kite SAIO gamepad {default_device['path']} "
         f"({default_device['name']})?"
     ):
         return InputDevice(default_device["path"])
@@ -206,11 +211,7 @@ def choose_gamepad():
             "No gamepad-like input device found. Connect the gamepad and try again."
         )
 
-    print(
-        "\nThe Arduino Leonardo is the standard Kite SAIO board and is excluded "
-        "from gamepad selection."
-    )
-    print("Gamepad candidates:")
+    print("\nSelectable input devices:")
     for index, device in enumerate(candidates, start=1):
         stable = f" ({device['stable_path']})" if device["stable_path"] else ""
         print(f"  {index}. {device['path']}: {device['name']}{stable}")
@@ -235,13 +236,16 @@ def choose_gamepad():
 
 
 def choose_default_gamepad():
-    try:
-        device = InputDevice(DEFAULT_DEVICE)
-    except OSError:
-        return None
-    if is_kite_saio_board(device.name):
-        return None
-    return device
+    for path in (DEFAULT_DEVICE_STABLE_PATH, DEFAULT_DEVICE):
+        try:
+            return InputDevice(path)
+        except OSError:
+            continue
+
+    for candidate in discover_devices():
+        if candidate["name"] == DEFAULT_DEVICE_NAME:
+            return InputDevice(candidate["path"])
+    return None
 
 
 def capture_combo(device):
@@ -309,7 +313,7 @@ def write_config(config_path, device, combo_codes):
     path = (
         (stable_device_path(device.path) or device.path)
         if device
-        else DEFAULT_DEVICE
+        else default_device_path()
     )
     parser = configparser.ConfigParser()
     parser["combo"] = {
@@ -552,7 +556,7 @@ def main():
     device_path = (
         args.device
         or (configuration["device"].path if configuration else None)
-        or DEFAULT_DEVICE
+        or default_device_path()
     )
     configured_combo = (
         configuration["combo_codes"]

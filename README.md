@@ -98,7 +98,7 @@ bash scripts/sync-roms-from-usb.sh --help
 
 #### How it works
 - The installer copies this script to `/home/pi/.local/lib/super-aio/` as the stable runtime location used by RetroPie.
-- During setup, it identifies the standard Kite SAIO Arduino Leonardo and excludes it, then defaults to `/dev/input/event1` and can capture any two gamepad buttons pressed together.
+- During setup, it detects the Kite SAIO Arduino Leonardo, selects it by default, and can capture any two gamepad buttons pressed together.
 - The selected device name, stable device path when available, and button codes are saved in `/home/pi/.config/super-aio/combo-breaker.conf`.
 - For supported emulators (e.g., `mame4all`, `pico8`), `runcommand_onstart.sh` validates the saved mapping and starts one background `python3` monitor as the `pi` user; `runcommand_onend.sh` stops it when the emulator exits.
 - When you press the configured two-button combo on your gamepad, the script will kill the emulator process, allowing for a quick exit.
@@ -124,7 +124,7 @@ chmod +x install-saio.sh scripts/*.sh
 ./install-saio.sh
 ```
 
-When the combo-breaker prompt appears, answer `y`. If no configuration exists, the installer creates the documented defaults: `/dev/input/event1`, SELECT `314`, START `315`, and processes `mame pico8`. To choose another HID event node or capture a custom two-button combo, run `--configure`. After setup, verify the saved mapping and runtime copy with:
+When the combo-breaker prompt appears, answer `y`. If no configuration exists, the installer creates the documented defaults for the Arduino Leonardo (`event4` or its `/dev/input/by-id` path), SELECT `314`, START `315`, and processes `mame pico8`. To choose another HID event node or capture a custom two-button combo, run `--configure`. After setup, verify the saved mapping and runtime copy with:
 
 ```bash
 python3 /home/pi/.local/lib/super-aio/co-co-combo-breaker.py \

@@ -414,7 +414,7 @@ ensure_combo_config() {
     if [[ ! -f "$COMBO_CONFIG" ]]; then
         printf '\nCombo-breaker configuration is missing.\n'
         printf 'The installer can create the documented combo-breaker defaults:\n'
-        printf '  device: /dev/input/event1 when available\n'
+        printf '  device: Arduino LLC Arduino Leonardo (event4/by-id when available)\n'
         printf '  SELECT: 314\n'
         printf '  START: 315\n'
         printf '  processes: mame pico8\n'
@@ -437,8 +437,8 @@ ensure_combo_config() {
     fi
 
     printf '\nCombo breaker is not configured for the current gamepad.\n'
-    printf 'The wizard will exclude the standard Kite SAIO Arduino Leonardo,\n'
-    printf 'select the gamepad, and capture two buttons pressed together.\n'
+    printf 'The wizard will default to the Kite SAIO Arduino Leonardo,\n'
+    printf 'then capture two buttons pressed together.\n'
     if ! confirm_change "Configure the two-button combo exit now?"; then
         printf 'SKIPPED: combo-breaker gamepad configuration\n'
         return 0
