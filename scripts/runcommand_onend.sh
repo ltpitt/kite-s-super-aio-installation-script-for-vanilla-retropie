@@ -1,5 +1,5 @@
 #!/bin/sh
-COMBO_BREAKER="/home/pi/Super-AIO-Setup/scripts/co-co-combo-breaker.py"
+COMBO_BREAKER="/home/pi/.local/lib/super-aio/co-co-combo-breaker.py"
 COMBO_PID_FILE="/tmp/super-aio-combo-breaker.pid"
 
 if [ -f "$COMBO_PID_FILE" ]; then

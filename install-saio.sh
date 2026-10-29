@@ -25,6 +25,7 @@ USER_ASOUND_TARGET="$PI_HOME/.asoundrc"
 SYSTEMD_SERVICE="/etc/systemd/system/saio.service"
 SSH_MARKER="$BOOT_ROOT/ssh"
 COMBO_CONFIG="$PI_HOME/.config/super-aio/combo-breaker.conf"
+COMBO_BREAKER_TARGET="$PI_HOME/.local/lib/super-aio/co-co-combo-breaker.py"
 
 RUN_DIR=""
 LOG_FILE=""
@@ -173,6 +174,7 @@ snapshot_configs() {
         "$CONFIG_ROOT/psx/emulators.cfg" \
         "$CONFIG_ROOT/psx/pcsx/pcsx.cfg" \
         "$COMBO_CONFIG" \
+        "$COMBO_BREAKER_TARGET" \
         /opt/retropie/supplementary/splashscreen/asplashscreen.sh \
         "$SYSTEMD_SERVICE"
     do
@@ -388,9 +390,19 @@ ensure_evdev() {
 }
 
 combo_config_valid() {
-    as_pi python3 "$SCRIPT_SOURCE/co-co-combo-breaker.py" \
+    as_pi python3 "$COMBO_BREAKER_TARGET" \
         --check-config \
         --config "$COMBO_CONFIG" >/dev/null 2>&1
+}
+
+ensure_combo_program() {
+    apply_template \
+        "$SCRIPT_SOURCE/co-co-combo-breaker.py" \
+        "$COMBO_BREAKER_TARGET" \
+        "Installed combo-breaker runtime" \
+        "$PI_USER" \
+        "$PI_GROUP" \
+        0644
 }
 
 ensure_combo_config() {
@@ -408,7 +420,7 @@ ensure_combo_config() {
     fi
 
     record_before_change "$COMBO_CONFIG"
-    as_pi python3 "$SCRIPT_SOURCE/co-co-combo-breaker.py" \
+    as_pi python3 "$COMBO_BREAKER_TARGET" \
         --configure \
         --config "$COMBO_CONFIG"
     combo_config_valid || fail "Combo-breaker configuration did not validate."
@@ -717,6 +729,7 @@ run_installation() {
     ensure_package libpng12-0
     ensure_python_serial
     ensure_evdev
+    ensure_combo_program
     ensure_combo_config
 
     saio_binaries=(
