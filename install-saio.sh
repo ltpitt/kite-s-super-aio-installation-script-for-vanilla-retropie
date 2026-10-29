@@ -134,7 +134,6 @@ capture_initial_state() {
     state_set python_serial "$(package_installed python-serial && printf installed || printf missing)"
     state_set python3_pip "$(package_installed python3-pip && printf installed || printf missing)"
     state_set evdev_import "$(evdev_importable && printf present || printf missing)"
-    state_set evdev_pip "$(python3 -m pip show evdev >/dev/null 2>&1 && printf present || printf missing)"
     state_set ssh_marker "$([[ -e "$SSH_MARKER" ]] && printf present || printf missing)"
     state_set service_file "$([[ -e "$SYSTEMD_SERVICE" ]] && printf present || printf missing)"
 
