@@ -98,7 +98,9 @@ bash scripts/sync-roms-from-usb.sh --help
 
 #### How it works
 - The installer places this script in the `scripts/` folder and ensures it is executable.
-- It is automatically run in the background by the system for supported emulators (e.g., mame4all, pico8) via the `runcommand_onstart.sh` script.
+- During setup, it identifies the standard Kite SAIO Arduino Leonardo and excludes it, then helps select the user's gamepad and capture its SELECT and START button codes.
+- The selected device name, stable device path when available, and button codes are saved in `/home/pi/.config/super-aio/combo-breaker.conf`.
+- For supported emulators (e.g., `mame4all`, `pico8`), `runcommand_onstart.sh` validates the saved mapping and starts one background monitor; `runcommand_onend.sh` stops it when the emulator exits.
 - When you press Select+Start on your gamepad, the script will kill the emulator process, allowing for a quick exit.
 - You can also run it manually for advanced usage or to identify button codes.
 
@@ -106,9 +108,11 @@ bash scripts/sync-roms-from-usb.sh --help
 
 ```bash
 python3 scripts/co-co-combo-breaker.py --help
+python3 scripts/co-co-combo-breaker.py --list-devices
+python3 scripts/co-co-combo-breaker.py --configure
 ```
 
-> Run the script with `--help` to see all available options and usage examples. Requires Python 3 and the `evdev` module (`sudo pip3 install evdev`).
+> Run the script with `--help` to see all available options and usage examples. The installer runs the configuration wizard automatically when the saved gamepad configuration is missing or invalid. Requires Python 3 and the `evdev` module; the installer installs it when needed.
 
 ---
 

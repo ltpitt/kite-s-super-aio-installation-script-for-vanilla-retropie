@@ -24,6 +24,7 @@ ASOUND_TARGET="/etc/asound.conf"
 USER_ASOUND_TARGET="$PI_HOME/.asoundrc"
 SYSTEMD_SERVICE="/etc/systemd/system/saio.service"
 SSH_MARKER="$BOOT_ROOT/ssh"
+COMBO_CONFIG="$PI_HOME/.config/super-aio/combo-breaker.conf"
 
 RUN_DIR=""
 LOG_FILE=""
@@ -171,6 +172,7 @@ snapshot_configs() {
         "$MAME_TARGET" \
         "$CONFIG_ROOT/psx/emulators.cfg" \
         "$CONFIG_ROOT/psx/pcsx/pcsx.cfg" \
+        "$COMBO_CONFIG" \
         /opt/retropie/supplementary/splashscreen/asplashscreen.sh \
         "$SYSTEMD_SERVICE"
     do
@@ -383,6 +385,34 @@ ensure_evdev() {
     as_root python3 -m pip install evdev
     evdev_importable || fail "Python evdev installation did not complete."
     printf 'INSTALLED: Python evdev module\n'
+}
+
+combo_config_valid() {
+    as_pi python3 "$SCRIPT_SOURCE/co-co-combo-breaker.py" \
+        --check-config \
+        --config "$COMBO_CONFIG" >/dev/null 2>&1
+}
+
+ensure_combo_config() {
+    if combo_config_valid; then
+        printf 'COMBO BREAKER CONFIG OK: %s\n' "$COMBO_CONFIG"
+        return 0
+    fi
+
+    printf '\nCombo breaker is not configured for the current gamepad.\n'
+    printf 'The wizard will exclude the standard Kite SAIO Arduino Leonardo,\n'
+    printf 'select the gamepad, and capture SELECT and START by button press.\n'
+    if ! confirm_change "Configure Select+Start combo exit now?"; then
+        printf 'SKIPPED: combo-breaker gamepad configuration\n'
+        return 0
+    fi
+
+    record_before_change "$COMBO_CONFIG"
+    as_pi python3 "$SCRIPT_SOURCE/co-co-combo-breaker.py" \
+        --configure \
+        --config "$COMBO_CONFIG"
+    combo_config_valid || fail "Combo-breaker configuration did not validate."
+    printf 'COMBO BREAKER CONFIGURED: %s\n' "$COMBO_CONFIG"
 }
 
 ensure_executable_group() {
@@ -687,6 +717,7 @@ run_installation() {
     ensure_package libpng12-0
     ensure_python_serial
     ensure_evdev
+    ensure_combo_config
 
     saio_binaries=(
         "$SAIO_RELEASE_PATH/../tester/pngview"
