@@ -33,6 +33,7 @@ roms/
 # Ignore installer artifacts
 /home/pi/Super-AIO/
 /home/pi/Super-AIO-Setup/
+backups/
 
 # Ignore USB mount points (if accidentally copied)
 /media/usb*/

@@ -12,11 +12,11 @@ We built this project for **the love of hacking**, the thrill of **homebrew**, a
 
 - **Fully automated setup**  
 - **Optimized emulator configurations (PiFBA & MAME4All)**  
-- **Automatic backups with timestamps**  
-- **Idempotent execution (safe for multiple runs)**  
-- **SSH enabled automatically on first reboot**  
-- **Wi-Fi configuration support (`wpa_supplicant.conf`)**  
-- **Systemd service for Super-AIO auto-launch**
+- **One complete, idempotent installer for first runs and maintenance**
+- **Per-change approval with previews and timestamped rollback snapshots**
+- **SSH enablement marker and Super-AIO systemd service**
+- **Secret-safe Wi-Fi handling; credentials are never copied automatically**
+- **No `xboxdrv` dependency**
 
 ---
 
@@ -36,33 +36,43 @@ cd kite-s-super-aio-installation-script-for-vanilla-retropie
 Make the installer executable and run it:
 
 ```bash
-chmod +x install-saio.sh
-sudo ./install-saio.sh
+chmod +x install-saio.sh scripts/*.sh
+./install-saio.sh
 ```
 
-> The installer will set executable permissions for all scripts in the `scripts/` folder automatically.
+The installer asks for sudo authentication when needed. It checks every prerequisite and active configuration first, skips matching items, and proposes only missing or changed items. It does not reboot the device.
+
+`install-saio.sh` is the only setup entry point. The other files under `scripts/` are runtime hooks, utilities, or targeted repair tools.
+
+---
+
+### Installer modes
+
+The default mode performs the complete setup. It can safely be run again after partial or previous setup:
+
+```bash
+./install-saio.sh
+```
+
+To create a backup snapshot without applying changes:
+
+```bash
+./install-saio.sh --snapshot-only
+```
+
+Each run stores private snapshots, logs, and a change manifest below `backups/install-saio/`. The command to roll back a run is printed at the end:
+
+```bash
+./install-saio.sh --rollback "$PWD/backups/install-saio/YYYYMMDD-HHMMSS"
+```
+
+Rollback restores files and service state. If the run installed a dependency or cloned Super-AIO, rollback asks before removing it and retains repositories with later changes.
 
 ---
 
 ## Backup System 🗂️
 
-Before modifying any file, the script creates timestamped backups (e.g., `config.txt_2025-05-20_22-15-30.backup`).
-
-### How to Restore a Backup
-
-To list available backup timestamps:
-
-```bash
-sudo ./install-saio.sh restore
-```
-
-To restore all configuration files from a specific backup timestamp:
-
-```bash
-sudo ./install-saio.sh restore YYYY-MM-DD_HH-MM-SS
-```
-
-> The script will restore all files backed up at that timestamp. A reboot is recommended after restoring.
+Before modifying an existing file, the installer displays the difference and saves the original under the run directory. New files are recorded so rollback removes them. Wi-Fi credentials are never included in snapshots or copied automatically.
 
 ---
 
@@ -101,3 +111,14 @@ python3 scripts/co-co-combo-breaker.py --help
 > Run the script with `--help` to see all available options and usage examples. Requires Python 3 and the `evdev` module (`sudo pip3 install evdev`).
 
 ---
+
+### Device repair scripts
+
+The following scripts make targeted, backed-up changes for known device issues:
+
+```bash
+./scripts/fix-asplashscreen-scaling.sh
+./scripts/fix-retroarch-controller-index.sh
+```
+
+The splash script sets the tested `320x240+0+0` window and the RetroArch script sets player 1 to controller index `0`. Both refuse ambiguous input and keep backups under `backups/`.
