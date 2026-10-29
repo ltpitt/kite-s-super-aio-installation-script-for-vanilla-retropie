@@ -473,7 +473,20 @@ def main():
         )
         return 0
 
-    if not (args.identify or args.combo):
+    if not (
+        args.identify
+        or args.combo
+        or args.configure
+        or args.create_default_config
+        or args.check_config
+    ):
+        if not os.path.exists(args.config):
+            try:
+                create_default_config(args.config)
+            except (OSError, RuntimeError, ValueError) as exc:
+                print(f"Error: {exc}", file=sys.stderr)
+                return 1
+            return 0
         parser.print_help()
         return 0
 

@@ -112,7 +112,7 @@ python3 scripts/co-co-combo-breaker.py --list-devices
 python3 scripts/co-co-combo-breaker.py --configure
 ```
 
-> Run the script with `--help` to see all available options and usage examples. The installer runs the configuration wizard automatically when the saved gamepad configuration is missing or invalid. Requires Python 3 and the `evdev` module; the installer installs it when needed.
+Running the script without arguments creates the default configuration when it is missing. Use `--configure` to capture custom button codes. `--combo` remains explicit so checking the script never starts a monitor unexpectedly. Requires Python 3 and the `evdev` module; the installer installs it when needed.
 
 #### Checking the first-time setup
 
