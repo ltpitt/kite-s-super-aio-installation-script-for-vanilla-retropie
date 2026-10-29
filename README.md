@@ -60,7 +60,7 @@ To inspect the complete ordered plan without sudo authentication or changing any
 ./install-saio.sh --dry-run
 ```
 
-The dry run reports skipped checks, proposed file diffs, and the commands that would install packages, copy files, change permissions, update hooks, create the SSH marker, or manage the Super-AIO service.
+The dry run reports skipped checks, proposed file diffs, and the commands that would install packages, copy files, change permissions, update hooks, create the SSH marker, or manage the Super-AIO service. SSH is considered configured when its service is active/enabled, `sshd` is running, or port 22 is listening, so an existing working SSH setup does not trigger a marker change.
 
 To create a backup snapshot without applying changes:
 

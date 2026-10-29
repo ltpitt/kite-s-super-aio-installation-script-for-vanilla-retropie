@@ -475,10 +475,14 @@ ensure_executable_group() {
 }
 
 apply_ssh_marker() {
-    [[ -e "$SSH_MARKER" ]] && {
+    if [[ -e "$SSH_MARKER" ]]; then
         printf 'SSH MARKER OK: %s\n' "$SSH_MARKER"
         return 0
-    }
+    fi
+    if ssh_configured; then
+        printf 'SSH SERVICE OK: SSH is already active or enabled; no boot marker needed.\n'
+        return 0
+    fi
 
     printf '\nSSH marker is missing: %s\n' "$SSH_MARKER"
     if ! confirm_change "Create the SSH enablement marker?"; then
@@ -488,6 +492,33 @@ apply_ssh_marker() {
     record_before_change "$SSH_MARKER"
     as_root install -D -o root -g root -m 0644 /dev/null "$SSH_MARKER"
     printf 'APPLIED: %s\n' "$SSH_MARKER"
+}
+
+ssh_unit_active_or_enabled() {
+    local unit
+    for unit in ssh.service sshd.service; do
+        if systemctl is-active --quiet "$unit" 2>/dev/null ||
+            systemctl is-enabled --quiet "$unit" 2>/dev/null; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+ssh_process_or_listener_active() {
+    if command -v pgrep >/dev/null 2>&1 &&
+        pgrep -x sshd >/dev/null 2>&1; then
+        return 0
+    fi
+    if command -v ss >/dev/null 2>&1 &&
+        ss -ltn 2>/dev/null | awk '$4 ~ /:22$/ { found=1 } END { exit !found }'; then
+        return 0
+    fi
+    return 1
+}
+
+ssh_configured() {
+    ssh_unit_active_or_enabled || ssh_process_or_listener_active
 }
 
 write_service_template() {
@@ -972,6 +1003,8 @@ run_dry_run() {
     printf '\n[SSH enablement marker]\n'
     if [[ -e "$SSH_MARKER" ]]; then
         printf 'SKIP: %s already exists.\n' "$SSH_MARKER"
+    elif ssh_configured; then
+        printf 'SKIP: SSH is already active or enabled; no boot marker is needed.\n'
     else
         printf 'COMMAND: sudo install -D -o root -g root -m 0644 /dev/null %q\n' "$SSH_MARKER"
     fi
