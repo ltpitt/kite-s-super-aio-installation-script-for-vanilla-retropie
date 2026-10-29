@@ -40,6 +40,7 @@ usage() {
     cat <<EOF
 Usage:
   $0                 Bootstrap missing dependencies and apply approved configuration changes.
+  $0 --dry-run       Inspect the device and print the complete planned command sequence.
   $0 --snapshot-only Snapshot active configs and exit without changing the system.
   $0 --rollback DIR  Restore files and service state from a previous run in DIR.
   $0 --help          Show this help.
@@ -286,24 +287,19 @@ apply_template() {
 apply_user_asoundrc() {
     local target="$USER_ASOUND_TARGET"
     local proposed_file
+    if [[ -e "$target" ]]; then
+        printf '\n=== User ALSA configuration ===\n'
+        printf 'SKIP: user ALSA config already exists: %s\n' "$target"
+        return 0
+    fi
+
     proposed_file="$(mktemp)"
     printf 'pcm.!default {\n\ttype hw\n\tcard 1\n}\n\nctl.!default {\n\ttype hw\n\tcard 1\n}\n' > "$proposed_file"
 
     printf '\n=== User ALSA configuration ===\n'
-    if [[ -f "$target" ]] && cmp -s -- "$proposed_file" "$target"; then
-        printf 'Current file already matches the proposed configuration; no change needed.\n'
-        rm -f -- "$proposed_file"
-        return 0
-    fi
-
-    if [[ -f "$target" ]]; then
-        diff -u --label "current: $target" --label "proposed: $target" "$target" "$proposed_file" || true
-    else
-        printf 'Current file: %s (does not exist)\nProposed configuration:\n' "$target"
-        sed 's/^/  /' "$proposed_file"
-    fi
-
-    if confirm_change "Apply the user ALSA configuration?"; then
+    printf 'Current file: %s (does not exist)\nProposed configuration:\n' "$target"
+    sed 's/^/  /' "$proposed_file"
+    if confirm_change "Create the user ALSA configuration?"; then
         record_before_change "$target"
         as_root install -D -o "$PI_USER" -g "$PI_GROUP" -m 0644 -- "$proposed_file" "$target"
         printf 'APPLIED: %s\n' "$target"
@@ -495,24 +491,7 @@ apply_ssh_marker() {
 }
 
 write_service_template() {
-    cat > "$RUN_DIR/saio.service.proposed" <<EOF
-[Unit]
-Description=Super-AIO Service
-After=network.target
-
-[Service]
-ExecStart=/usr/bin/nice -n 19 /usr/bin/python3 $SAIO_RELEASE_PATH/saio-osd.py
-Restart=always
-User=$PI_USER
-WorkingDirectory=$SAIO_RELEASE_PATH/
-StandardOutput=syslog
-StandardError=syslog
-SyslogIdentifier=saio-service
-Nice=19
-
-[Install]
-WantedBy=multi-user.target
-EOF
+    service_template > "$RUN_DIR/saio.service.proposed"
 }
 
 service_enabled() {
@@ -521,6 +500,14 @@ service_enabled() {
 
 service_active() {
     as_root systemctl is-active --quiet saio.service
+}
+
+service_enabled_readonly() {
+    systemctl is-enabled --quiet saio.service
+}
+
+service_active_readonly() {
+    systemctl is-active --quiet saio.service
 }
 
 ensure_service() {
@@ -735,6 +722,264 @@ preflight() {
     done
 }
 
+PLAN_APT_UPDATE=0
+
+plan_template() {
+    local source="$1"
+    local target="$2"
+    local description="$3"
+    local owner="${4:-root}"
+    local group="${5:-root}"
+    local mode="${6:-0644}"
+
+    printf '\n[%s]\n' "$description"
+    if [[ ! -f "$source" ]]; then
+        printf 'BLOCKED: source is missing: %s\n' "$source"
+        return 0
+    fi
+    if [[ -f "$target" ]] && cmp -s -- "$source" "$target"; then
+        printf 'SKIP: active file already matches.\n'
+        return 0
+    fi
+
+    if [[ -f "$target" ]]; then
+        printf 'WOULD UPDATE: %s\n' "$target"
+        diff -u --label "current: $target" --label "proposed: $source" "$target" "$source" || true
+    else
+        printf 'WOULD CREATE: %s\n' "$target"
+    fi
+    printf 'COMMAND: sudo install -D -o %s -g %s -m %s %q %q\n' \
+        "$owner" "$group" "$mode" "$source" "$target"
+}
+
+plan_user_asoundrc() {
+    local proposed
+    proposed="$(printf 'pcm.!default {\n\ttype hw\n\tcard 1\n}\n\nctl.!default {\n\ttype hw\n\tcard 1\n}\n')"
+
+    printf '\n[User ALSA configuration]\n'
+    if [[ -e "$USER_ASOUND_TARGET" ]]; then
+        printf 'SKIP: preserve existing user ALSA config: %s\n' "$USER_ASOUND_TARGET"
+        return 0
+    fi
+    printf 'WOULD CREATE: %s\n' "$USER_ASOUND_TARGET"
+    printf 'COMMAND: sudo install -D -o %s -g %s -m 0644 /dev/stdin %q <<\\''EOF\\''\n%sEOF\n' \
+        "$PI_USER" "$PI_GROUP" "$USER_ASOUND_TARGET" "$proposed"
+}
+
+plan_package() {
+    local package="$1"
+    if package_installed "$package"; then
+        printf 'SKIP PACKAGE: %s is already installed.\n' "$package"
+        return 0
+    fi
+
+    printf '\n[Package: %s]\n' "$package"
+    if ((PLAN_APT_UPDATE == 0)); then
+        printf 'COMMAND: sudo apt-get update\n'
+        PLAN_APT_UPDATE=1
+    fi
+    printf 'COMMAND: sudo apt-get install -y %q\n' "$package"
+}
+
+plan_repository() {
+    local required
+    printf '\n[Super-AIO repository]\n'
+    if [[ -d "$SAIO_RELEASE_PATH" ]]; then
+        printf 'SKIP: repository and release directory already exist.\n'
+    elif [[ ! -e "$REPO_PATH" ]]; then
+        printf 'WOULD CLONE: %s\n' "$REPO_PATH"
+        printf 'COMMAND: git clone --depth=1 %q %q\n' "$REPO_URL" "$REPO_PATH"
+        return 0
+    else
+        printf 'BLOCKED: %s exists but its release directory is missing.\n' "$REPO_PATH"
+        return 0
+    fi
+
+    for required in \
+        "$SAIO_RELEASE_PATH/saio-osd.py" \
+        "$SAIO_RELEASE_PATH/python-serial_2.6-1.1_all.deb" \
+        "$SAIO_RELEASE_PATH/autostart.sh"
+    do
+        if [[ -f "$required" ]]; then
+            printf 'CHECK: present %s\n' "$required"
+        else
+            printf 'BLOCKED: required repository file is missing: %s\n' "$required"
+        fi
+    done
+}
+
+plan_python_serial() {
+    printf '\n[Python serial package]\n'
+    if package_installed python-serial; then
+        printf 'SKIP PACKAGE: python-serial is already installed.\n'
+        return 0
+    fi
+    printf 'COMMAND: sudo dpkg -i %q\n' "$SAIO_RELEASE_PATH/python-serial_2.6-1.1_all.deb"
+    printf 'FALLBACK COMMAND: sudo apt-get install -f -y\n'
+}
+
+plan_evdev() {
+    printf '\n[Python evdev module]\n'
+    if evdev_importable; then
+        printf 'SKIP MODULE: evdev imports successfully.\n'
+        return 0
+    fi
+    printf 'CHECK: python3-pip\n'
+    plan_package python3-pip
+    printf 'COMMAND: sudo python3 -m pip install evdev\n'
+}
+
+plan_combo_program() {
+    plan_template \
+        "$SCRIPT_SOURCE/co-co-combo-breaker.py" \
+        "$COMBO_BREAKER_TARGET" \
+        "Installed combo-breaker runtime" \
+        "$PI_USER" \
+        "$PI_GROUP" \
+        0644
+}
+
+plan_combo_config() {
+    local helper="$COMBO_BREAKER_TARGET"
+    printf '\n[Combo-breaker configuration]\n'
+    if [[ ! -f "$COMBO_BREAKER_TARGET" ]]; then
+        helper="$SCRIPT_SOURCE/co-co-combo-breaker.py"
+        printf 'NOTE: runtime helper will be installed before this check.\n'
+    fi
+    if [[ -f "$COMBO_CONFIG" ]] &&
+        python3 "$helper" --check-config >/dev/null 2>&1; then
+        printf 'SKIP: configuration is valid for the current device.\n'
+        return 0
+    fi
+    if [[ ! -f "$COMBO_CONFIG" ]]; then
+        printf 'WOULD CREATE DEFAULT CONFIG: %s\n' "$COMBO_CONFIG"
+        printf 'COMMAND: COMBO_BREAKER_INIT_ONLY=1 python3 %q\n' "$COMBO_BREAKER_TARGET"
+    else
+        printf 'WOULD RECONFIGURE: %s\n' "$COMBO_CONFIG"
+        printf 'COMMAND: python3 %q --configure\n' "$COMBO_BREAKER_TARGET"
+    fi
+}
+
+plan_executable_group() {
+    local description="$1"
+    shift
+    local file
+    local missing=()
+
+    for file in "$@"; do
+        [[ -f "$file" ]] || continue
+        [[ -x "$file" ]] || missing+=("$file")
+    done
+    if ((${#missing[@]} == 0)); then
+        printf 'SKIP PERMISSIONS: %s are already executable.\n' "$description"
+        return 0
+    fi
+    printf '\n[Executable permissions: %s]\n' "$description"
+    printf 'COMMAND: sudo chmod +x --'
+    printf ' %q' "${missing[@]}"
+    printf '\n'
+}
+
+service_template() {
+    cat <<EOF
+[Unit]
+Description=Super-AIO Service
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/nice -n 19 /usr/bin/python $SAIO_RELEASE_PATH/saio-osd.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+
+EOF
+}
+
+plan_service() {
+    local service_changed=0
+    printf '\n[Super-AIO systemd service]\n'
+    if [[ -f "$SYSTEMD_SERVICE" ]] &&
+        cmp -s <(service_template) "$SYSTEMD_SERVICE"; then
+        printf 'SKIP: service file already matches.\n'
+    else
+        service_changed=1
+        if [[ -f "$SYSTEMD_SERVICE" ]]; then
+            printf 'WOULD UPDATE: %s\n' "$SYSTEMD_SERVICE"
+            diff -u \
+                --label "current: $SYSTEMD_SERVICE" \
+                --label "proposed: $SYSTEMD_SERVICE" \
+                "$SYSTEMD_SERVICE" <(service_template) || true
+        else
+            printf 'WOULD CREATE: %s\n' "$SYSTEMD_SERVICE"
+        fi
+        printf 'COMMAND: write generated unit to %q\n' "$SYSTEMD_SERVICE"
+        printf 'COMMAND: sudo systemctl daemon-reload\n'
+    fi
+
+    if service_enabled_readonly; then
+        printf 'SKIP: saio.service is enabled.\n'
+    else
+        printf 'COMMAND: sudo systemctl enable saio.service\n'
+    fi
+    if service_active_readonly; then
+        if ((service_changed)); then
+            printf 'COMMAND: sudo systemctl restart saio.service\n'
+        else
+            printf 'SKIP: saio.service is active.\n'
+        fi
+    else
+        printf 'COMMAND: sudo systemctl start saio.service\n'
+    fi
+}
+
+run_dry_run() {
+    local -a saio_binaries setup_scripts
+
+    preflight
+    PLAN_APT_UPDATE=0
+    printf 'DRY RUN ONLY: no sudo authentication, writes, package changes, service changes, or reboot.\n'
+    printf 'The following is the ordered plan for the current device state.\n'
+
+    plan_repository
+    plan_package libpng12-0
+    plan_python_serial
+    plan_evdev
+    plan_combo_program
+    plan_combo_config
+
+    saio_binaries=(
+        "$SAIO_RELEASE_PATH/../tester/pngview"
+        "$SAIO_RELEASE_PATH/osd/saio-osd"
+        "$SAIO_RELEASE_PATH/rfkill/rfkill"
+        "$SAIO_RELEASE_PATH/flash/flash.sh"
+    )
+    shopt -s nullglob
+    setup_scripts=("$SCRIPT_SOURCE"/*.sh "$SCRIPT_SOURCE"/*.py)
+    plan_executable_group "Super-AIO binaries" "${saio_binaries[@]}"
+    plan_executable_group "repository setup scripts" "${setup_scripts[@]}"
+
+    plan_template "$CONFIG_SOURCE/config.txt" "$BOOT_ROOT/config.txt" "Raspberry Pi boot config"
+    plan_template "$CONFIG_SOURCE/config-saio.txt" "$BOOT_ROOT/config-saio.txt" "Super-AIO boot config"
+    plan_template "$CONFIG_SOURCE/asound.conf" "$ASOUND_TARGET" "System ALSA config"
+    plan_user_asoundrc
+    plan_template "$CONFIG_SOURCE/fba2x.cfg" "$FBA_TARGET" "PiFBA config"
+    plan_template "$CONFIG_SOURCE/mame.cfg" "$MAME_TARGET" "MAME4All main config"
+    plan_template "$SAIO_RELEASE_PATH/autostart.sh" "$AUTOSTART_TARGET" "EmulationStation autostart config"
+    plan_template "$SCRIPT_SOURCE/runcommand_onstart.sh" "$RUNCOMMAND_START_TARGET" "RetroPie game-start hook" root root 0755
+    plan_template "$SCRIPT_SOURCE/runcommand_onend.sh" "$RUNCOMMAND_END_TARGET" "RetroPie game-end hook" root root 0755
+
+    printf '\n[SSH enablement marker]\n'
+    if [[ -e "$SSH_MARKER" ]]; then
+        printf 'SKIP: %s already exists.\n' "$SSH_MARKER"
+    else
+        printf 'COMMAND: sudo install -D -o root -g root -m 0644 /dev/null %q\n' "$SSH_MARKER"
+    fi
+
+    plan_service
+    printf '\nEND DRY RUN: no changes were made.\n'
+}
+
 run_installation() {
     local -a saio_binaries setup_scripts
 
@@ -796,6 +1041,13 @@ main() {
                 return 2
             }
             rollback_run "$2"
+            ;;
+        --dry-run)
+            [[ $# -eq 1 ]] || {
+                usage >&2
+                return 2
+            }
+            run_dry_run
             ;;
         --snapshot-only|"")
             [[ $# -le 1 ]] || {

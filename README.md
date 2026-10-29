@@ -54,6 +54,14 @@ The default mode performs the complete setup. It can safely be run again after p
 ./install-saio.sh
 ```
 
+To inspect the complete ordered plan without sudo authentication or changing anything:
+
+```bash
+./install-saio.sh --dry-run
+```
+
+The dry run reports skipped checks, proposed file diffs, and the commands that would install packages, copy files, change permissions, update hooks, create the SSH marker, or manage the Super-AIO service.
+
 To create a backup snapshot without applying changes:
 
 ```bash
