@@ -1,6 +1,6 @@
-# Super-AIO Installation for RetroPie
+# Kite SAIO / Super-AIO Installation for RetroPie
 
-This repository contains an idempotent setup installer for Kite Super-AIO boards running RetroPie on Raspberry Pi devices.
+This repository contains an idempotent setup installer for the **Kite SAIO / Super-AIO** control board on vanilla RetroPie, including Game Boy Zero builds running on Raspberry Pi Zero hardware. It complements the upstream [kiteretro/Super-AIO](https://github.com/kiteretro/Super-AIO) project with safe installation, controller, emulator, audio, display, and rollback configuration.
 
 ## Install
 
