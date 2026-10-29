@@ -27,6 +27,7 @@ SETUP_PATH="$SCRIPT_DIR"
 
 # System paths
 REPO_PATH="/home/pi/Super-AIO"
+SAIO_RELEASE_PATH="$REPO_PATH/release/saio"
 CONFIG_PATH="/opt/retropie/configs/all"
 FBA_PATH="/opt/retropie/configs/fba"
 MAME_PATH="/opt/retropie/configs/mame-mame4all"
@@ -37,7 +38,6 @@ AUTOSTART_FILE="$CONFIG_PATH/autostart.sh"
 RUNCOMMAND_START="$CONFIG_PATH/runcommand-onstart.sh"
 RUNCOMMAND_END="$CONFIG_PATH/runcommand-onend.sh"
 SYSTEMD_SERVICE="/etc/systemd/system/saio.service"
-XBOXDRV_SERVICE="/etc/systemd/system/xboxdrv.service"
 
 # ==== RESTORE MODE ====
 if [[ "$1" == "restore" ]]; then
@@ -104,33 +104,13 @@ for pkg in "${PKGS[@]}"; do
     fi
 done
 
-# Check and install xboxdrv via RetroPie-Setup if missing
-if ! command -v xboxdrv >/dev/null 2>&1; then
-    echo "xboxdrv not found. Attempting to install via RetroPie-Setup..."
-    if [ -d "/home/pi/RetroPie-Setup" ]; then
-        sudo /home/pi/RetroPie-Setup/retropie_packages.sh xboxdrv install
-    else
-        echo "RetroPie-Setup not found! Cloning RetroPie-Setup..."
-        git clone --depth=1 https://github.com/RetroPie/RetroPie-Setup.git /home/pi/RetroPie-Setup
-        sudo /home/pi/RetroPie-Setup/retropie_packages.sh xboxdrv install
-    fi
-    if command -v xboxdrv >/dev/null 2>&1; then
-        echo "xboxdrv installed successfully."
-    else
-        echo "Failed to install xboxdrv. Please install manually via RetroPie-Setup. Exiting."
-        exit 1
-    fi
-else
-    echo "xboxdrv is already installed, skipping."
-fi
-
 echo "Cloning Super-AIO repository..."
 if [ ! -d "$REPO_PATH" ]; then
     git clone https://github.com/geebles/Super-AIO/ "$REPO_PATH"
 else
     echo "Super-AIO repository already exists, skipping clone."
 fi
-cd "$REPO_PATH/release/saio"
+cd "$SAIO_RELEASE_PATH"
 
 echo "Installing Python serial package..."
 if ! dpkg -l | grep -q "python-serial"; then
@@ -170,6 +150,11 @@ for script in scripts/*.sh scripts/*.py; do
         sudo chmod +x "$script"
     fi
 done
+for script in "$SETUP_PATH"/scripts/*.sh "$SETUP_PATH"/scripts/*.py; do
+    if [ -f "$script" ]; then
+        sudo chmod +x "$script"
+    fi
+done
 
 echo "Backing up configuration files before modification..."
 backup_file "/etc/asound.conf"
@@ -177,13 +162,13 @@ backup_file "$BOOT_PATH/config.txt"
 backup_file "$BOOT_PATH/config-saio.txt"
 
 echo "Copying essential configuration files..."
-sudo cp -u configs/asound.conf /etc/
-sudo cp -u configs/config.txt "$BOOT_PATH/config.txt"
-sudo cp -u configs/config-saio.txt "$BOOT_PATH/config-saio.txt"
+sudo cp -u "$SETUP_PATH/configs/asound.conf" /etc/
+sudo cp -u "$SETUP_PATH/configs/config.txt" "$BOOT_PATH/config.txt"
+sudo cp -u "$SETUP_PATH/configs/config-saio.txt" "$BOOT_PATH/config-saio.txt"
 
 echo "Backing up and updating RetroPie autostart script..."
 backup_file "$AUTOSTART_FILE"
-sudo cp -u autostart.sh "$AUTOSTART_FILE"
+sudo cp -u "$SAIO_RELEASE_PATH/autostart.sh" "$AUTOSTART_FILE"
 
 echo "Setting up sound configuration..."
 if [ ! -f "/home/pi/.asoundrc" ]; then
@@ -193,8 +178,8 @@ fi
 echo "Backing up and copying emulator configuration files..."
 backup_file "$FBA_PATH/fba2x.cfg"
 backup_file "$MAME_PATH/mame.cfg"
-sudo cp -u configs/fba2x.cfg "$FBA_PATH/"
-sudo cp -u configs/mame.cfg "$MAME_PATH/"
+sudo cp -u "$SETUP_PATH/configs/fba2x.cfg" "$FBA_PATH/"
+sudo cp -u "$SETUP_PATH/configs/mame.cfg" "$MAME_PATH/"
 
 echo "Enabling SSH on first reboot..."
 if [ ! -f "$BOOT_PATH/ssh" ]; then
@@ -220,8 +205,8 @@ backup_file "$RUNCOMMAND_START"
 backup_file "$RUNCOMMAND_END"
 
 echo "Copying new runcommand scripts..."
-sudo cp -u scripts/runcommand_onstart.sh "$RUNCOMMAND_START"
-sudo cp -u scripts/runcommand_onend.sh "$RUNCOMMAND_END"
+sudo cp -u "$SETUP_PATH/scripts/runcommand_onstart.sh" "$RUNCOMMAND_START"
+sudo cp -u "$SETUP_PATH/scripts/runcommand_onend.sh" "$RUNCOMMAND_END"
 
 echo "Creating systemd service for Super-AIO..."
 if [ ! -f "$SYSTEMD_SERVICE" ]; then
@@ -231,10 +216,10 @@ Description=Super-AIO Service
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/nice -n 19 /usr/bin/python3 $REPO_PATH/release/saio/saio-osd.py
+ExecStart=/usr/bin/nice -n 19 /usr/bin/python3 $SAIO_RELEASE_PATH/saio-osd.py
 Restart=always
 User=pi
-WorkingDirectory=$REPO_PATH/release/saio/
+WorkingDirectory=$SAIO_RELEASE_PATH/
 StandardOutput=syslog
 StandardError=syslog
 SyslogIdentifier=saio-service
@@ -247,50 +232,13 @@ else
     echo "Super-AIO Service file already exists, skipping creation."
 fi
 
-echo "Creating systemd service for xboxdrv..."
-if [ ! -f "$XBOXDRV_SERVICE" ]; then
-    sudo tee "$XBOXDRV_SERVICE" > /dev/null <<EOF
-[Unit]
-Description=Xboxdrv Service
-After=network.target
-
-[Service]
-ExecStart=/opt/retropie/supplementary/xboxdrv/bin/xboxdrv \
-    --evdev /dev/input/by-id/usb-Arduino_LLC_Arduino_Leonardo_HIDAF-if02-event-joystick \
-    --silent \
-    --detach-kernel-driver \
-    --force-feedback \
-    --deadzone-trigger 15% \
-    --deadzone 4000 \
-    --mimic-xpad \
-    --device-name "XBOX 360 Controller (xboxdrv)" \
-    --evdev-absmap ABS_HAT0X=dpad_x,ABS_HAT0Y=dpad_y \
-    --evdev-keymap BTN_THUMB2=x,BTN_THUMB=a,BTN_TRIGGER=b,BTN_PINKIE=back,BTN_BASE=lb,BTN_BASE3=rb,BTN_TOP=y,BTN_TOP2=start \
-    --dpad-only \
-    --ui-axismap lt=void,rt=void \
-    --ui-buttonmap tl=void,tr=void,guide=void
-Restart=always
-User=pi
-
-[Install]
-WantedBy=multi-user.target
-EOF
-else
-    echo "Xboxdrv service already exists, skipping creation."
-fi
-
 echo "Reloading systemd and enabling services..."
 sudo systemctl daemon-reload
 sudo systemctl enable saio.service
 sudo systemctl start saio.service
-sudo systemctl enable xboxdrv
-sudo systemctl start xboxdrv
 
 echo "Checking Super-AIO service status..."
 sudo systemctl status saio.service
-
-echo "Checking xboxdrv service status..."
-sudo systemctl status xboxdrv
 
 read -p "Installation complete. A reboot is required for all changes to take effect. Reboot now? [y/N]: " REBOOT_ANSWER
 if [[ "$REBOOT_ANSWER" =~ ^[Yy]$ ]]; then
