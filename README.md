@@ -26,7 +26,8 @@ Use `--dry-run` before the first real run. The installer help is the authoritati
 
 ## Included utilities
 
-- `scripts/co-co-combo-breaker.py` configures and monitors a two-button emulator-exit combo.
+- `scripts/co-co-combo-breaker.py` configures and monitors a two-button emulator-exit combo; RetroPie hooks cover both named emulators and direct Pico-8 script launches.
+- `scripts/sync-pico8-from-device.sh` copies a licensed Pico-8 setup between Game Boys with backup, checksum verification, and rollback.
 - `scripts/sync-roms-from-usb.sh` synchronizes supported ROMs from USB storage.
 - `scripts/fix-asplashscreen-scaling.sh` and `scripts/fix-retroarch-controller-index.sh` apply targeted, backed-up repairs.
 
@@ -35,6 +36,7 @@ Use `--dry-run` before the first real run. The installer help is the authoritati
 - No `xboxdrv` dependency.
 - Wi-Fi credentials are not copied or included in backups.
 - Existing user configuration is preserved unless an approved change explicitly targets it.
+- Pico-8 sync uses the unified RetroPie combo breaker rather than launching a second legacy button helper.
 - Run backups are stored below `backups/` and are ignored by Git.
 
 See `AGENTS.md` for repository contribution guidance.
