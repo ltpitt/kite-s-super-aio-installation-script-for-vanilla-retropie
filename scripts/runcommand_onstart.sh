@@ -31,7 +31,7 @@ if [ "$2" = "mame4all" ] || [ "$2" = "pico8" ]; then
   if [ -f "$COMBO_BREAKER" ] &&
     [ -f "$COMBO_CONFIG" ] &&
     run_as_pi "$COMBO_BREAKER" --check-config --config "$COMBO_CONFIG" >/dev/null 2>&1; then
-    run_as_pi "$COMBO_BREAKER" --combo --config "$COMBO_CONFIG" &
+    run_as_pi "$COMBO_BREAKER" --config "$COMBO_CONFIG" &
     echo "$!" > "$COMBO_PID_FILE"
   else
     echo "Combo breaker is not configured for the gamepad; run install-saio.sh." >&2

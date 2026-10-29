@@ -438,11 +438,6 @@ def build_parser():
         help="Identify button codes (prints all key events)",
     )
     parser.add_argument(
-        "--combo",
-        action="store_true",
-        help="Monitor for the configured two-button combo and kill processes",
-    )
-    parser.add_argument(
         "--configure",
         action="store_true",
         help="Select a gamepad and capture two buttons pressed together",
@@ -527,22 +522,13 @@ def main():
         )
         return 0
 
-    if not (
-        args.identify
-        or args.combo
-        or args.configure
-        or args.create_default_config
-        or args.check_config
-    ):
+    if not (args.identify or args.configure or args.create_default_config or args.check_config):
         if not os.path.exists(args.config):
             try:
                 create_default_config(args.config)
             except (OSError, RuntimeError, ValueError) as exc:
                 print(f"Error: {exc}", file=sys.stderr)
                 return 1
-            return 0
-        parser.print_help()
-        return 0
 
     configuration = None
     if os.path.exists(args.config):

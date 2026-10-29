@@ -112,7 +112,7 @@ python3 scripts/co-co-combo-breaker.py --list-devices
 python3 scripts/co-co-combo-breaker.py --configure
 ```
 
-Running the script without arguments creates the default configuration when it is missing. Use `--configure` to select the gamepad and capture two buttons pressed together. `--combo` remains explicit so checking the script never starts a monitor unexpectedly. Requires Python 3 and the `evdev` module; the installer installs it when needed.
+Running the script without arguments creates the default configuration when it is missing and starts monitoring the configured combo. Use `--configure` to select the gamepad and capture two buttons pressed together. Use `--check-config` when validation should not start a monitor. Requires Python 3 and the `evdev` module; the installer installs it when needed.
 
 #### Checking the first-time setup
 
