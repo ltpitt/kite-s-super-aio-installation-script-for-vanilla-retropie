@@ -116,8 +116,8 @@ def parse_config(config_path):
     section = parser["combo"]
     device_name = section.get("device_name", "").strip()
     device_path = section.get("device_path", "").strip()
-    if not device_name or not device_path:
-        raise ValueError("Configuration must include device_name and device_path")
+    if not device_path:
+        raise ValueError("Configuration must include device_path")
 
     try:
         select_code = section.getint("select_code")
@@ -131,7 +131,7 @@ def parse_config(config_path):
     if select_code == start_code:
         raise ValueError("Select and start codes must be different")
 
-    device = resolve_device(device_path, device_name)
+    device = resolve_device(device_path, device_name or None)
     return {
         "device": device,
         "device_name": device_name,
@@ -155,16 +155,20 @@ def prompt_yes_no(prompt, default=True):
         print("Please answer yes or no.")
 
 
-def choose_gamepad():
-    devices = discover_devices()
+def gamepad_candidates(devices):
     candidates = [
         device
         for device in devices
         if device["has_key"] and not device["is_kite_board"]
     ]
-    joystick_candidates = [device for device in candidates if device["has_abs"]]
-    if joystick_candidates:
-        candidates = joystick_candidates
+    return sorted(
+        candidates,
+        key=lambda device: (device["path"] != DEFAULT_DEVICE, device["path"]),
+    )
+
+
+def choose_gamepad():
+    candidates = gamepad_candidates(discover_devices())
 
     if not candidates:
         raise RuntimeError(
@@ -197,6 +201,16 @@ def choose_gamepad():
         if 0 <= index < len(candidates):
             return InputDevice(candidates[index]["path"])
         print("Please select one of the listed numbers.")
+
+
+def choose_default_gamepad():
+    try:
+        device = InputDevice(DEFAULT_DEVICE)
+    except OSError:
+        return None
+    if is_kite_saio_board(device.name):
+        return None
+    return device
 
 
 def capture_button(device, label, used_codes):
@@ -239,13 +253,19 @@ def capture_button(device, label, used_codes):
 
 def write_config(config_path, device, select_code, start_code):
     parent = os.path.dirname(os.path.abspath(config_path))
+    parent_exists = os.path.isdir(parent)
     os.makedirs(parent, mode=0o700, exist_ok=True)
-    os.chmod(parent, 0o700)
+    if not parent_exists:
+        os.chmod(parent, 0o700)
 
-    path = stable_device_path(device.path) or device.path
+    path = (
+        (stable_device_path(device.path) or device.path)
+        if device
+        else DEFAULT_DEVICE
+    )
     parser = configparser.ConfigParser()
     parser["combo"] = {
-        "device_name": device.name,
+        "device_name": device.name if device else "",
         "device_path": path,
         "select_code": str(select_code),
         "start_code": str(start_code),
@@ -263,6 +283,30 @@ def write_config(config_path, device, select_code, start_code):
     finally:
         if os.path.exists(temporary_path):
             os.unlink(temporary_path)
+
+
+def create_default_config(config_path):
+    device = choose_default_gamepad()
+    write_config(
+        config_path,
+        device,
+        DEFAULT_SELECT_CODE,
+        DEFAULT_START_CODE,
+    )
+    if device:
+        print(
+            f"Created default combo-breaker configuration for {device.name} "
+            f"({device.path})"
+        )
+    else:
+        print(
+            f"Created default combo-breaker configuration using {DEFAULT_DEVICE}; "
+            "connect the gamepad before validating it"
+        )
+    print(
+        f"SELECT={DEFAULT_SELECT_CODE}, START={DEFAULT_START_CODE}, "
+        f"processes={','.join(DEFAULT_KILL_PROCESSES)}"
+    )
 
 
 def configure_combo(config_path):
@@ -350,6 +394,11 @@ def build_parser():
         help="Interactively select a gamepad and save Select+Start codes",
     )
     parser.add_argument(
+        "--create-default-config",
+        action="store_true",
+        help="Create a config with the detected gamepad and default button codes",
+    )
+    parser.add_argument(
         "--check-config",
         action="store_true",
         help="Validate the saved combo-breaker configuration and device",
@@ -399,6 +448,14 @@ def main():
     if args.configure:
         try:
             configure_combo(args.config)
+        except (OSError, RuntimeError, ValueError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
+        return 0
+
+    if args.create_default_config:
+        try:
+            create_default_config(args.config)
         except (OSError, RuntimeError, ValueError) as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return 1

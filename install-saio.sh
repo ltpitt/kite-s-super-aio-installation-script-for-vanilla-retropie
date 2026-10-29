@@ -411,6 +411,31 @@ ensure_combo_config() {
         return 0
     fi
 
+    if [[ ! -f "$COMBO_CONFIG" ]]; then
+        printf '\nCombo-breaker configuration is missing.\n'
+        printf 'The installer can create the documented combo-breaker defaults:\n'
+        printf '  device: /dev/input/event1 when available\n'
+        printf '  SELECT: 314\n'
+        printf '  START: 315\n'
+        printf '  processes: mame pico8\n'
+        if ! confirm_change "Create the default combo-breaker configuration?"; then
+            printf 'SKIPPED: combo-breaker default configuration\n'
+            return 0
+        fi
+
+        record_before_change "$COMBO_CONFIG"
+        as_pi python3 "$COMBO_BREAKER_TARGET" \
+            --create-default-config \
+            --config "$COMBO_CONFIG"
+        if combo_config_valid; then
+            printf 'DEFAULT COMBO BREAKER CONFIGURED: %s\n' "$COMBO_CONFIG"
+        else
+            printf 'WARNING: default combo-breaker config was created but the device is not currently valid.\n'
+            printf 'Reconnect the gamepad and run --configure if needed.\n'
+        fi
+        return 0
+    fi
+
     printf '\nCombo breaker is not configured for the current gamepad.\n'
     printf 'The wizard will exclude the standard Kite SAIO Arduino Leonardo,\n'
     printf 'select the gamepad, and capture SELECT and START by button press.\n'

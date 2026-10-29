@@ -124,11 +124,19 @@ chmod +x install-saio.sh scripts/*.sh
 ./install-saio.sh
 ```
 
-When the combo-breaker prompt appears, answer `y`. The wizard excludes the Arduino Leonardo, selects the gamepad, asks you to press SELECT and START, and saves the result. After setup, verify the saved mapping and runtime copy with:
+When the combo-breaker prompt appears, answer `y`. If no configuration exists, the installer creates the documented defaults: `/dev/input/event1`, SELECT `314`, START `315`, and processes `mame pico8`. To choose another HID event node or capture custom button codes instead, run `--configure`. After setup, verify the saved mapping and runtime copy with:
 
 ```bash
 python3 /home/pi/.local/lib/super-aio/co-co-combo-breaker.py \
   --check-config \
+  --config /home/pi/.config/super-aio/combo-breaker.conf
+```
+
+To create the defaults manually:
+
+```bash
+python3 /home/pi/.local/lib/super-aio/co-co-combo-breaker.py \
+  --create-default-config \
   --config /home/pi/.config/super-aio/combo-breaker.conf
 ```
 
