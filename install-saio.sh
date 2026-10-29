@@ -9,6 +9,7 @@ BACKUP_ROOT="$SETUP_DIR/backups/install-saio"
 REPO_URL="https://github.com/geebles/Super-AIO.git"
 REPO_PATH="/home/pi/Super-AIO"
 SAIO_RELEASE_PATH="$REPO_PATH/release/saio"
+RETROPIE_SETUP_PATH="/home/pi/RetroPie-Setup"
 PI_USER="pi"
 PI_HOME="/home/$PI_USER"
 PI_GROUP="$(id -gn "$PI_USER" 2>/dev/null || printf '%s' "$PI_USER")"
@@ -20,6 +21,7 @@ RUNCOMMAND_START_TARGET="$CONFIG_ROOT/all/runcommand-onstart.sh"
 RUNCOMMAND_END_TARGET="$CONFIG_ROOT/all/runcommand-onend.sh"
 FBA_TARGET="$CONFIG_ROOT/fba/fba2x.cfg"
 MAME_TARGET="$CONFIG_ROOT/mame-mame4all/mame.cfg"
+PCSX_TARGET="$CONFIG_ROOT/psx/pcsx/pcsx.cfg"
 ASOUND_TARGET="/etc/asound.conf"
 USER_ASOUND_TARGET="$PI_HOME/.asoundrc"
 SYSTEMD_SERVICE="/etc/systemd/system/saio.service"
@@ -84,6 +86,15 @@ package_installed() {
     local package="$1"
     dpkg-query -W -f='${Status}' "$package" 2>/dev/null |
         grep -q '^install ok installed$'
+}
+
+emulator_binary() {
+    case "$1" in
+        pcsx-rearmed) printf '/opt/retropie/emulators/pcsx-rearmed/pcsx' ;;
+        pifba) printf '/opt/retropie/emulators/pifba/fba2x' ;;
+        mame4all) printf '/opt/retropie/emulators/mame4all/mame' ;;
+        *) return 1 ;;
+    esac
 }
 
 evdev_importable() {
@@ -349,6 +360,35 @@ ensure_repository() {
     do
         [[ -f "$required" ]] || fail "Super-AIO checkout is incomplete; missing $required"
     done
+}
+
+ensure_emulator() {
+    local module="$1"
+    local binary
+    binary="$(emulator_binary "$module")"
+    if [[ -x "$binary" ]]; then
+        printf 'EMULATOR OK: %s (%s)\n' "$module" "$binary"
+        return 0
+    fi
+
+    printf '\nEMULATOR MISSING: %s\n' "$module"
+    if [[ ! -x "$binary" ]]; then
+        printf 'Expected binary: %s\n' "$binary"
+    fi
+    if [[ ! -d "$RETROPIE_SETUP_PATH" ]]; then
+        if ! confirm_change "Clone RetroPie-Setup before installing $module?"; then
+            fail "RetroPie-Setup is required to install $module."
+        fi
+        as_pi git clone --depth=1 \
+            https://github.com/RetroPie/RetroPie-Setup.git \
+            "$RETROPIE_SETUP_PATH"
+    fi
+    if ! confirm_change "Install the RetroPie $module module?"; then
+        fail "Required emulator is missing: $module"
+    fi
+    as_root "$RETROPIE_SETUP_PATH/retropie_packages.sh" "$module" install
+    [[ -x "$binary" ]] || fail "RetroPie did not install the expected $module binary: $binary"
+    printf 'INSTALLED EMULATOR: %s\n' "$module"
 }
 
 ensure_python_serial() {
@@ -744,6 +784,7 @@ preflight() {
         "$CONFIG_SOURCE/config-saio.txt" \
         "$CONFIG_SOURCE/fba2x.cfg" \
         "$CONFIG_SOURCE/mame.cfg" \
+        "$CONFIG_SOURCE/pcsx-rearmed.cfg" \
         "$SCRIPT_SOURCE/runcommand_onstart.sh" \
         "$SCRIPT_SOURCE/runcommand_onend.sh" \
         "$SCRIPT_SOURCE/co-co-combo-breaker.py"
@@ -836,6 +877,23 @@ plan_repository() {
             printf 'BLOCKED: required repository file is missing: %s\n' "$required"
         fi
     done
+}
+
+plan_emulator() {
+    local module="$1"
+    local binary
+    binary="$(emulator_binary "$module")"
+    printf '\n[Emulator: %s]\n' "$module"
+    if [[ -x "$binary" ]]; then
+        printf 'SKIP: binary is present: %s\n' "$binary"
+        return 0
+    fi
+    printf 'WOULD INSTALL: %s\n' "$module"
+    printf 'Expected binary after install: %s\n' "$binary"
+    if [[ ! -d "$RETROPIE_SETUP_PATH" ]]; then
+        printf 'COMMAND: git clone --depth=1 https://github.com/RetroPie/RetroPie-Setup.git %q\n' "$RETROPIE_SETUP_PATH"
+    fi
+    printf 'COMMAND: sudo %q/retropie_packages.sh %q install\n' "$RETROPIE_SETUP_PATH" "$module"
 }
 
 plan_python_serial() {
@@ -972,6 +1030,9 @@ run_dry_run() {
     printf 'The following is the ordered plan for the current device state.\n'
 
     plan_repository
+    plan_emulator pcsx-rearmed
+    plan_emulator pifba
+    plan_emulator mame4all
     plan_package libpng12-0
     plan_python_serial
     plan_evdev
@@ -995,6 +1056,7 @@ run_dry_run() {
     plan_user_asoundrc
     plan_template "$CONFIG_SOURCE/fba2x.cfg" "$FBA_TARGET" "PiFBA config"
     plan_template "$CONFIG_SOURCE/mame.cfg" "$MAME_TARGET" "MAME4All main config"
+    plan_template "$CONFIG_SOURCE/pcsx-rearmed.cfg" "$PCSX_TARGET" "PCSX-ReARMed standalone config" "$PI_USER" "$PI_GROUP" 0644
     plan_template "$SAIO_RELEASE_PATH/autostart.sh" "$AUTOSTART_TARGET" "EmulationStation autostart config"
     plan_template "$SCRIPT_SOURCE/runcommand_onstart.sh" "$RUNCOMMAND_START_TARGET" "RetroPie game-start hook" root root 0755
     plan_template "$SCRIPT_SOURCE/runcommand_onend.sh" "$RUNCOMMAND_END_TARGET" "RetroPie game-end hook" root root 0755
@@ -1027,6 +1089,9 @@ run_installation() {
     fi
 
     ensure_repository
+    ensure_emulator pcsx-rearmed
+    ensure_emulator pifba
+    ensure_emulator mame4all
     ensure_package libpng12-0
     ensure_python_serial
     ensure_evdev
@@ -1051,6 +1116,7 @@ run_installation() {
     apply_user_asoundrc
     apply_template "$CONFIG_SOURCE/fba2x.cfg" "$FBA_TARGET" "PiFBA config"
     apply_template "$CONFIG_SOURCE/mame.cfg" "$MAME_TARGET" "MAME4All main config"
+    apply_template "$CONFIG_SOURCE/pcsx-rearmed.cfg" "$PCSX_TARGET" "PCSX-ReARMed standalone config" "$PI_USER" "$PI_GROUP" 0644
     apply_template "$SAIO_RELEASE_PATH/autostart.sh" "$AUTOSTART_TARGET" "EmulationStation autostart config"
     apply_template "$SCRIPT_SOURCE/runcommand_onstart.sh" "$RUNCOMMAND_START_TARGET" "RetroPie game-start hook" root root 0755
     apply_template "$SCRIPT_SOURCE/runcommand_onend.sh" "$RUNCOMMAND_END_TARGET" "RetroPie game-end hook" root root 0755

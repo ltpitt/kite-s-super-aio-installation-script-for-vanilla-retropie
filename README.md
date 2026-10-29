@@ -12,7 +12,9 @@ We built this project for **the love of hacking**, the thrill of **homebrew**, a
 
 - **Fully automated setup**  
 - **Optimized emulator configurations (PiFBA & MAME4All)**  
+- **Known-good standalone `pcsx-rearmed` Arduino controller configuration**
 - **One complete, idempotent installer for first runs and maintenance**
+- **Pi Zero-friendly emulator checks/installers for `pcsx-rearmed`, PiFBA, and MAME4All**
 - **Per-change approval with previews and timestamped rollback snapshots**
 - **SSH enablement marker and Super-AIO systemd service**
 - **Secret-safe Wi-Fi handling; credentials are never copied automatically**
@@ -61,6 +63,8 @@ To inspect the complete ordered plan without sudo authentication or changing any
 ```
 
 The dry run reports skipped checks, proposed file diffs, and the commands that would install packages, copy files, change permissions, update hooks, create the SSH marker, or manage the Super-AIO service. SSH is considered configured when its service is active/enabled, `sshd` is running, or port 22 is listening, so an existing working SSH setup does not trigger a marker change.
+
+The installer also proposes the repository's standalone `pcsx-rearmed` configuration, based on the working Game Boy mapping for the Arduino Leonardo. It keeps the keyboard and Arduino bindings and omits the obsolete `xboxdrv` binding.
 
 To create a backup snapshot without applying changes:
 
