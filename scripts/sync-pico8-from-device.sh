@@ -6,6 +6,7 @@ SOURCE_HOME="${PICO8_SOURCE_HOME:-/home/pi}"
 TARGET_HOME="${PICO8_TARGET_HOME:-/home/pi}"
 BACKUP_ROOT="$TARGET_HOME/pico8-transfer-backups"
 TARGET_ES_CONFIG="/etc/emulationstation/es_systems.cfg"
+TARGET_PICO8_GAMELIST="$TARGET_HOME/.emulationstation/gamelists/pico8/gamelist.xml"
 RUN_DIR=""
 MANIFEST=""
 DRY_RUN=0
@@ -179,6 +180,30 @@ normalize_pico8_launchers() {
     done < <(find "$TARGET_HOME/RetroPie/roms/pico8" -maxdepth 1 -type f -name '*.sh' -print0)
 }
 
+install_pico8_gamelist() {
+    python3 - "$TARGET_PICO8_GAMELIST" "$TARGET_HOME/RetroPie/roms/pico8" <<'PY'
+import os
+import sys
+import xml.etree.ElementTree as ET
+
+output_path, rom_path = sys.argv[1:3]
+root = ET.Element("gameList")
+for filename in sorted(os.listdir(rom_path)):
+    if not filename.lower().endswith(".sh"):
+        continue
+    game = ET.SubElement(root, "game")
+    ET.SubElement(game, "path").text = f"./{filename}"
+    ET.SubElement(game, "name").text = os.path.splitext(filename)[0]
+
+os.makedirs(os.path.dirname(output_path), mode=0o755, exist_ok=True)
+ET.ElementTree(root).write(
+    output_path,
+    encoding="utf-8",
+    xml_declaration=True,
+)
+PY
+}
+
 plan_transfer() {
     source_preflight || fail "Source Pico-8 setup is incomplete or inaccessible."
     printf 'DRY RUN ONLY\n'
@@ -247,6 +272,7 @@ perform_transfer() {
     backup_entry "$TARGET_HOME/install/pico8"
     backup_entry "$TARGET_HOME/RetroPie/roms/pico8"
     backup_entry "$TARGET_HOME/scripts/python-superaio-custom-button"
+    backup_entry "$TARGET_PICO8_GAMELIST"
     backup_entry "$TARGET_ES_CONFIG"
 
     if ! confirm_change "Replace the target Pico-8 setup with the source copy?"; then
@@ -278,6 +304,7 @@ perform_transfer() {
         "$TARGET_HOME/scripts/python-superaio-custom-button"/*.py
 
     normalize_pico8_launchers
+    install_pico8_gamelist
     install_emulationstation_entry
     source_hashes="$(source_manifest)"
     target_hashes="$(target_manifest)"
